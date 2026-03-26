@@ -246,7 +246,7 @@ function RegionMiniCard({
             />
             <Tooltip
               contentStyle={{ borderRadius: "8px", border: "1px solid #E5E7EB", fontSize: 11, padding: "4px 8px" }}
-              formatter={(v: number) => [v.toLocaleString(), "Activados"]}
+              formatter={(v) => [Number(v).toLocaleString(), "Activados"]}
               labelFormatter={(l: string) => l}
               cursor={{ stroke: "#E5E7EB", strokeWidth: 1 }}
             />
