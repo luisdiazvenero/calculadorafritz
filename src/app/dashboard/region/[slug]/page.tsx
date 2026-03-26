@@ -242,10 +242,11 @@ export default function RegionPage() {
               tickFormatter={(v) => v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(1)}M` : v >= 1000 ? `$${(v / 1000).toFixed(0)}k` : String(v)} />
             <Tooltip
               contentStyle={{ borderRadius: "12px", border: "1px solid #E5E7EB", fontSize: 12 }}
-              formatter={(v: number, name: string) => {
-                if (name === "activados")    return [v.toLocaleString(), "Activados"];
-                if (name === "cajas")        return [v.toLocaleString(), "Cajas SO"];
-                if (name === "rentabilidad") return [`$${v.toLocaleString()}`, "Rentabilidad"];
+              formatter={(v, name) => {
+                const n = Number(v);
+                if (name === "activados")    return [n.toLocaleString(), "Activados"];
+                if (name === "cajas")        return [n.toLocaleString(), "Cajas SO"];
+                if (name === "rentabilidad") return [`$${n.toLocaleString()}`, "Rentabilidad"];
                 return [v, name];
               }}
             />

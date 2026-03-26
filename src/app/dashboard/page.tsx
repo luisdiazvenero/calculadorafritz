@@ -247,7 +247,7 @@ function RegionMiniCard({
             <Tooltip
               contentStyle={{ borderRadius: "8px", border: "1px solid #E5E7EB", fontSize: 11, padding: "4px 8px" }}
               formatter={(v) => [Number(v).toLocaleString(), "Activados"]}
-              labelFormatter={(l: string) => l}
+              labelFormatter={(l) => l}
               cursor={{ stroke: "#E5E7EB", strokeWidth: 1 }}
             />
             <Area type="monotone" dataKey="v" stroke={color} strokeWidth={1.5}
@@ -480,7 +480,7 @@ export default function DashboardPage() {
                 boxShadow: "0 4px 6px -1px rgba(0,0,0,0.07)",
                 fontSize: 12,
               }}
-              formatter={(value: number, name: string) => [value.toLocaleString(), name]}
+              formatter={(value, name) => [Number(value).toLocaleString(), String(name)]}
               cursor={{ fill: "#F9FAFB" }}
             />
             {regions.map((region) => (
