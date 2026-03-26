@@ -313,10 +313,11 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
                     tickFormatter={(v) => v >= 1000 ? `$${(v/1000).toFixed(0)}k` : String(v)} />
                   <Tooltip
                     contentStyle={{ borderRadius: "12px", border: "1px solid #E5E7EB", fontSize: 12 }}
-                    formatter={(v: number, name: string) => {
-                      if (name === "Activados")    return [v.toLocaleString(), "Activados"];
-                      if (name === "Cajas")        return [v.toLocaleString(), "Cajas SO"];
-                      if (name === "Rentabilidad") return [`$${(v).toLocaleString()}k`, "Rentabilidad"];
+                    formatter={(v, name) => {
+                      const n = Number(v);
+                      if (name === "Activados")    return [n.toLocaleString(), "Activados"];
+                      if (name === "Cajas")        return [n.toLocaleString(), "Cajas SO"];
+                      if (name === "Rentabilidad") return [`$${n.toLocaleString()}k`, "Rentabilidad"];
                       return [v, name];
                     }}
                   />
