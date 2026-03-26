@@ -71,8 +71,8 @@ function CompactResult({
     return Math.round(v).toLocaleString();
   };
   const progress = Math.min((base / meta) * 100, 100);
-  const barColor = progress >= 90 ? "bg-green-500" : progress >= 70 ? "bg-amber-500" : "bg-red-500";
-  const textColor = progress >= 90 ? "text-green-600" : progress >= 70 ? "text-amber-600" : "text-red-600";
+  const barColor = progress >= 80 ? "bg-green-500" : progress >= 50 ? "bg-amber-500" : "bg-red-500";
+  const textColor = progress >= 80 ? "text-green-600" : progress >= 50 ? "text-amber-600" : "text-red-600";
   return (
     <div>
       {/* Row 1: metric name (full width, no truncate) + delta badge */}
@@ -528,8 +528,8 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
                     <tbody>
                       {resultRows.map((row) => {
                         const progress = Math.min((row.base / row.meta) * 100, 100);
-                        const barColor = progress >= 90 ? "bg-green-500" : progress >= 70 ? "bg-amber-500" : "bg-red-500";
-                        const pctColor = progress >= 90 ? "text-green-600" : progress >= 70 ? "text-amber-600" : "text-red-600";
+                        const barColor = progress >= 80 ? "bg-green-500" : progress >= 50 ? "bg-amber-500" : "bg-red-500";
+                        const pctColor = progress >= 80 ? "text-green-600" : progress >= 50 ? "text-amber-600" : "text-red-600";
                         return (
                           <tr key={row.label} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/50 transition-colors">
                             <td
