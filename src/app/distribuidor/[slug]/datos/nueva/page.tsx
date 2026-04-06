@@ -128,6 +128,45 @@ export default function NuevaEntradaPage({ params }: { params: Promise<{ slug: s
     );
   }
 
+  // Cell color palette
+  const C = {
+    yellow:  { bg: "#FEF9C3", text: "#713F12" },
+    blue:    { bg: "#DBEAFE", text: "#1E3A8A" },
+    orange:  { bg: "#FFEDD5", text: "#7C2D12" },
+    red:     { bg: "#FEE2E2", text: "#7F1D1D" },
+    green:   { bg: "#DCFCE7", text: "#14532D" },
+    none:    { bg: "transparent", text: "#374151" },
+  } as const;
+  type CellColor = keyof typeof C;
+
+  const vendMeta = Math.round(form.numVendedores * (1 + 0.05));
+  const cli_vend_meta = vendMeta > 0 ? (preview.activadosMeta / vendMeta).toFixed(1) : "—";
+  const caj_cli_meta  = preview.activadosMeta > 0 ? (preview.cajasMeta / preview.activadosMeta).toFixed(1) : "—";
+  const caj_vend_meta = vendMeta > 0 ? Math.round(preview.cajasMeta / vendMeta).toLocaleString() : "—";
+  const fmtPct = (v: number) => v > 0 ? `${(v * 100).toFixed(0)}%` : "—";
+
+  type Row = {
+    label: string;
+    base: string;      baseBg?: CellColor;
+    variacion: string; varBg?: CellColor;
+    meta: string;      metaBg?: CellColor;
+    rowBg?: string;
+  };
+
+  const tableRows: Row[] = [
+    { label: "Total Cartera",         base: form.totalCartera.toLocaleString(),                  baseBg: "yellow", variacion: "—",                           meta: "—"                                                           },
+    { label: "Activados",             base: Math.round(preview.activadosBase).toLocaleString(),   baseBg: "blue",   variacion: fmtPct(form.pctActivacion),    varBg: "yellow", meta: Math.round(preview.activadosMeta).toLocaleString(), metaBg: "orange" },
+    { label: "Clientes con Fritz",    base: Math.round(preview.fritzeBase).toLocaleString(),      baseBg: "red",    variacion: fmtPct(form.pctClientesFritz), varBg: "blue",   meta: Math.round(preview.fritzMeta).toLocaleString(),     metaBg: "red"    },
+    { label: "Número de SKUs",        base: Math.round(preview.skusBase).toLocaleString(),        baseBg: "red",    variacion: "10%",                         varBg: "blue",   meta: Math.round(preview.skusMeta).toLocaleString(),      metaBg: "red"    },
+    { label: "Cajas Sell Out",        base: Math.round(preview.cajasBase).toLocaleString(),       baseBg: "red",    variacion: "10%",                         varBg: "blue",   meta: Math.round(preview.cajasMeta).toLocaleString(),     metaBg: "green"  },
+    { label: "Clientes Prom × Vend.", base: preview.clientesPorVendedor.toFixed(1),               variacion: "—",                                              meta: cli_vend_meta,                                               metaBg: "green"  },
+    { label: "Cajas Prom × Cliente",  base: preview.cajasPorCliente.toFixed(1),                   variacion: "—",                                              meta: caj_cli_meta                                                               },
+    { label: "Incr. Vendedores",      base: form.numVendedores.toString(),                        variacion: "—",                                              meta: vendMeta > 0 ? vendMeta.toLocaleString() : "—"                             },
+    { label: "Cajas Prom × Vendedor", base: preview.cajasPorVendedor.toFixed(0),                  baseBg: "green",  variacion: "—",                           meta: caj_vend_meta,                                               metaBg: "green"  },
+    { label: "Rentabilidad aprox.",   base: "—",                                                  variacion: "—",   meta: fmtCur(preview.rentabilidad), rowBg: "#DCFCE7", metaBg: "green" },
+    { label: "Rebate final período",  base: "—",                                                  variacion: "—",   meta: fmtCur(preview.rebateTotal),  rowBg: "#DCFCE7", metaBg: "green" },
+  ];
+
   return (
     <div className="p-8 space-y-8">
       {/* Header */}
@@ -145,16 +184,14 @@ export default function NuevaEntradaPage({ params }: { params: Promise<{ slug: s
       </div>
 
       {/* Body */}
-      <div className="grid grid-cols-5 gap-8 items-start">
+      <div className="grid grid-cols-2 gap-8 items-start">
 
-        {/* ── Left: Form ── */}
-        <div className="col-span-3 bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-
-          {/* Fields */}
+        {/* Form */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
           <div className="px-8 py-6">
             <div className="grid grid-cols-2 gap-x-6 gap-y-6">
 
-              {/* Period field */}
+              {/* Period */}
               <div className="col-span-2">
                 <label className="block text-sm font-medium text-gray-800 mb-1">Período del reporte</label>
                 <p className="text-xs text-gray-400 mb-2">Mes y año al que corresponden estos datos</p>
@@ -181,42 +218,32 @@ export default function NuevaEntradaPage({ params }: { params: Promise<{ slug: s
                 </div>
               </div>
 
-              <Field
-                fieldKey="totalCartera" type="number" colSpan={2}
+              <Field fieldKey="totalCartera" type="number" colSpan={2}
                 label="Total cartera del Cliente"
                 description="Número total de clientes en tu cartera"
-                icon={RiUserLine}              />
-              <Field
-                fieldKey="pctActivacion" type="percent"
+                icon={RiUserLine} />
+              <Field fieldKey="pctActivacion" type="percent"
                 label="% de Activación actual"
-                description="Clientes activos actualmente"
-              />
-              <Field
-                fieldKey="pctClientesFritz" type="percent"
+                description="Clientes activos actualmente" />
+              <Field fieldKey="pctClientesFritz" type="percent"
                 label="% Clientes con Fritz"
-                description="Clientes activos que tienen Fritz"
-              />
-              <Field
-                fieldKey="totalSkusFritz" type="number"
+                description="Clientes activos que tienen Fritz" />
+              <Field fieldKey="totalSkusFritz" type="number"
                 label="SKUs Fritz en portafolio"
                 description="SKUs de Fritz en tu portafolio"
-                icon={RiBox3Line}              />
-              <Field
-                fieldKey="cajasPromedio" type="number"
+                icon={RiBox3Line} />
+              <Field fieldKey="cajasPromedio" type="number"
                 label="Cajas promedio (Sell Out)"
                 description="Cajas vendidas por período"
-                icon={RiShoppingBagLine}              />
-              <Field
-                fieldKey="numVendedores" type="number"
+                icon={RiShoppingBagLine} />
+              <Field fieldKey="numVendedores" type="number"
                 label="# de Vendedores"
                 description="Vendedores en tu equipo"
-                icon={RiTeamLine}              />
-              <Field
-                fieldKey="margenGanancia" type="percent"
+                icon={RiTeamLine} />
+              <Field fieldKey="margenGanancia" type="percent"
                 label="Margen de Ganancia"
                 description="Tu margen de ganancia actual"
-                icon={RiMoneyDollarCircleLine}
-              />
+                icon={RiMoneyDollarCircleLine} />
             </div>
 
             <button
@@ -238,83 +265,50 @@ export default function NuevaEntradaPage({ params }: { params: Promise<{ slug: s
           </div>
         </div>
 
-        {/* ── Right: Live preview table ── */}
-        {(() => {
-          const pe = previewEntry as typeof previewEntry & {
-            pctIncrementoActivos: number; pctIncrementoFritz: number;
-            pctIncrementoSkus: number; pctIncrementoSellOut: number;
-            pctIncrementoVendedores: number;
-          };
-          const vendMeta = Math.round(form.numVendedores * (1 + (pe.pctIncrementoVendedores ?? 0)));
-          const cli_vend_meta = vendMeta > 0 ? (preview.activadosMeta / vendMeta).toFixed(1) : "—";
-          const caj_cli_meta  = preview.activadosMeta > 0 ? (preview.cajasMeta / preview.activadosMeta).toFixed(1) : "—";
-          const caj_vend_meta = vendMeta > 0 ? Math.round(preview.cajasMeta / vendMeta).toLocaleString() : "—";
-
-          type Row = { label: string; base: string; variacion: string; meta: string; highlight?: "green" };
-          const fmtPct = (v: number) => v > 0 ? `${(v * 100).toFixed(0)}%` : "—";
-          const tableRows: Row[] = [
-            { label: "Total Cartera",          base: form.totalCartera.toLocaleString(),                 variacion: "—",                                meta: "—"                                            },
-            { label: "Activados",              base: Math.round(preview.activadosBase).toLocaleString(), variacion: fmtPct(form.pctActivacion),          meta: Math.round(preview.activadosMeta).toLocaleString() },
-            { label: "Clientes con Fritz",     base: Math.round(preview.fritzeBase).toLocaleString(),    variacion: fmtPct(form.pctClientesFritz),       meta: Math.round(preview.fritzMeta).toLocaleString()     },
-            { label: "Número de SKUs",         base: Math.round(preview.skusBase).toLocaleString(),      variacion: fmtPct(pe.pctIncrementoSkus ?? 0),   meta: Math.round(preview.skusMeta).toLocaleString()      },
-            { label: "Cajas Sell Out",         base: Math.round(preview.cajasBase).toLocaleString(),     variacion: fmtPct(pe.pctIncrementoSellOut ?? 0),meta: Math.round(preview.cajasMeta).toLocaleString()     },
-            { label: "Clientes Prom × Vend.",  base: preview.clientesPorVendedor.toFixed(1),             variacion: "—",                                meta: cli_vend_meta                                      },
-            { label: "Cajas Prom × Cliente",   base: preview.cajasPorCliente.toFixed(1),                 variacion: "—",                                meta: caj_cli_meta                                       },
-            { label: "Incr. Vendedores",       base: form.numVendedores.toString(),                      variacion: "—",                                meta: vendMeta > 0 ? vendMeta.toLocaleString() : "—"     },
-            { label: "Cajas Prom × Vendedor",  base: preview.cajasPorVendedor.toFixed(0),                variacion: "—",                                meta: caj_vend_meta                                      },
-            { label: "Rentabilidad aprox.",    base: "—",                                               variacion: "—",                                meta: fmtCur(preview.rentabilidad), highlight: "green"   },
-            { label: "Rebate final período",   base: "—",                                               variacion: "—",                                meta: fmtCur(preview.rebateTotal),  highlight: "green"   },
-          ];
-
-          return (
-            <div className="col-span-2 flex flex-col gap-3 sticky top-6">
-            <div className="rounded-2xl border border-gray-200 shadow-sm overflow-hidden" style={{ backgroundColor: "#f7f7f7" }}>
-              {/* Header */}
-              <div className="grid grid-cols-5 text-xs font-semibold text-white" style={{ backgroundColor: "#1e2a3a" }}>
-                <div className="px-3 py-3 col-span-2">CLIENTE: {distributor.name.toUpperCase()}</div>
-                <div className="px-2 py-3 text-center border-l border-white/10">Base</div>
-                <div className="px-2 py-3 text-center border-l border-white/10">Variación</div>
-                <div className="px-2 py-3 text-center border-l border-white/10">Meta</div>
-              </div>
-              {/* Rows */}
-              <div className="divide-y divide-gray-200 text-xs">
-                {tableRows.map((row) => (
-                  <div
-                    key={row.label}
-                    className={cn(
-                      "grid grid-cols-5 items-center",
-                      row.highlight === "green" ? "bg-green-50" : ""
-                    )}
-                    style={row.highlight !== "green" ? { backgroundColor: "#f7f7f7" } : undefined}
-                  >
-                    <div className="px-3 py-2.5 col-span-2 text-gray-700 font-medium leading-tight">{row.label}</div>
-                    <div className="px-2 py-2.5 text-center tabular-nums text-gray-600 border-l border-gray-200">{row.base}</div>
-                    <div className="px-2 py-2.5 text-center tabular-nums border-l border-gray-200">
-                      {row.variacion === "—"
-                        ? <span className="text-gray-300">—</span>
-                        : <span className="text-primary-600 font-medium">{row.variacion}</span>
-                      }
+        {/* Live preview table */}
+        <div className="flex flex-col gap-3 sticky top-6">
+          <div className="rounded-2xl border border-gray-200 shadow-sm overflow-hidden" style={{ backgroundColor: "#f7f7f7" }}>
+            <div className="grid grid-cols-5 text-sm font-semibold text-white" style={{ backgroundColor: "#1e2a3a" }}>
+              <div className="px-4 py-3.5 col-span-2">CLIENTE: {distributor.name.toUpperCase()}</div>
+              <div className="px-3 py-3.5 text-center border-l border-white/10">Base</div>
+              <div className="px-3 py-3.5 text-center border-l border-white/10">Variación</div>
+              <div className="px-3 py-3.5 text-center border-l border-white/10">Meta</div>
+            </div>
+            <div className="divide-y divide-gray-200 text-sm">
+              {tableRows.map((row) => {
+                const basePalette = C[row.baseBg ?? "none"];
+                const varPalette  = C[row.varBg  ?? "none"];
+                const metaPalette = C[row.metaBg ?? "none"];
+                return (
+                  <div key={row.label} className="grid grid-cols-5 items-stretch"
+                    style={{ backgroundColor: row.rowBg ?? "#f7f7f7" }}>
+                    <div className="px-4 py-3 col-span-2 text-gray-700 font-medium leading-tight flex items-center">
+                      {row.label}
                     </div>
-                    <div className="px-2 py-2.5 text-center tabular-nums border-l border-gray-200">
-                      {row.meta === "—"
-                        ? <span className="text-gray-300">—</span>
-                        : <span className={cn("font-semibold", row.highlight === "green" ? "text-green-700" : "text-gray-900")}>{row.meta}</span>
-                      }
+                    <div className="px-3 py-3 text-center tabular-nums font-semibold border-l border-gray-200 flex items-center justify-center"
+                      style={{ backgroundColor: basePalette.bg, color: basePalette.text }}>
+                      {row.base === "—" ? <span className="text-gray-300 font-normal">—</span> : row.base}
+                    </div>
+                    <div className="px-3 py-3 text-center tabular-nums font-semibold border-l border-gray-200 flex items-center justify-center"
+                      style={{ backgroundColor: varPalette.bg, color: varPalette.text }}>
+                      {row.variacion === "—" ? <span className="text-gray-300 font-normal">—</span> : row.variacion}
+                    </div>
+                    <div className="px-3 py-3 text-center tabular-nums font-bold border-l border-gray-200 flex items-center justify-center"
+                      style={{ backgroundColor: metaPalette.bg, color: metaPalette.text }}>
+                      {row.meta === "—" ? <span className="text-gray-300 font-normal">—</span> : row.meta}
                     </div>
                   </div>
-                ))}
-              </div>
+                );
+              })}
             </div>
-              {/* Disclaimer */}
-              <div className="flex items-start gap-2">
-                <span className="flex-shrink-0 w-4 h-4 rounded-full bg-gray-400 text-white text-[10px] font-bold flex items-center justify-center mt-0.5">i</span>
-                <p className="text-xs text-gray-400 leading-snug">
-                  Tabla informativa. Los valores se calculan en tiempo real a partir de los datos ingresados y pueden variar según la configuración del período.
-                </p>
-              </div>
-            </div>
-          );
-        })()}
+          </div>
+          <div className="flex items-start gap-2">
+            <span className="flex-shrink-0 w-4 h-4 rounded-full bg-gray-400 text-white text-[10px] font-bold flex items-center justify-center mt-0.5">i</span>
+            <p className="text-xs text-gray-400 leading-snug">
+              Tabla informativa. Los valores se calculan en tiempo real a partir de los datos ingresados.
+            </p>
+          </div>
+        </div>
 
       </div>
     </div>

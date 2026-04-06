@@ -1,5 +1,5 @@
 "use client";
-import { use, useState } from "react";
+import { use, useState, useMemo } from "react";
 import { distributors, regions, monthlyEntries, calcular, formatPeriod, delta } from "@/lib/mock-data";
 import { cn } from "@/utils/cn";
 import Link from "next/link";
@@ -11,6 +11,9 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
 } from "recharts";
 import {
   RiArrowUpLine,
@@ -18,21 +21,22 @@ import {
   RiArrowLeftLine,
   RiArrowDownSLine,
   RiArrowRightSLine,
+  RiArrowUpSLine,
   RiEditLine,
-  RiHistoryLine,
+  RiCalculatorLine,
   RiGroupLine,
-  RiBox3Line,
-  RiPieChart2Line,
-  RiUserAddLine,
+  RiSearchLine,
+  RiCalendarLine,
+  RiShareBoxLine,
 } from "@remixicon/react";
 
 const REGION_COLORS: Record<string, string> = {
-  Capital:           "#0466C8",
-  Oriente:           "#BE3054",
-  Centro:            "#424656",
-  "Centro Occidente":"#FB6A85",
-  Occidente:         "#A7AABD",
-  Andes:             "#1A2D5A",
+  Capital:           "#3B82F6",
+  Oriente:           "#F59E0B",
+  Centro:            "#10B981",
+  "Centro Occidente":"#F43F5E",
+  Occidente:         "#8B5CF6",
+  Andes:             "#0891B2",
 };
 
 function DeltaBadge({ current, previous }: { current: number; previous: number }) {
@@ -46,6 +50,39 @@ function DeltaBadge({ current, previous }: { current: number; previous: number }
       {positive ? <RiArrowUpLine className="w-3 h-3" /> : <RiArrowDownLine className="w-3 h-3" />}
       {Math.abs(d * 100).toFixed(1)}%
     </span>
+  );
+}
+
+function GaugeChart({ progress }: { progress: number }) {
+  const p = Math.min(Math.max(progress, 0), 100);
+  const gaugeColor = p >= 80 ? "#16a34a" : p >= 50 ? "#f97316" : "#dc2626";
+  const cx = 90, cy = 82, r = 66;
+  // Top semicircle path: from left (cx-r, cy) clockwise-on-screen to right (cx+r, cy)
+  // sweep=1 = clockwise in SVG coords (y-down) → goes UP through top ✓
+  const arcPath = `M ${cx - r} ${cy} A ${r} ${r} 0 1 1 ${cx + r} ${cy}`;
+  // Needle angle: 0% = left (π rad), 100% = right (0 rad)
+  const angleMath = (1 - p / 100) * Math.PI;
+  const needleLen = r - 16;
+  const nx = cx + needleLen * Math.cos(angleMath);
+  const ny = cy - needleLen * Math.sin(angleMath);
+  return (
+    <svg viewBox="0 0 180 90" className="w-full">
+      {/* Background track */}
+      <path d={arcPath} fill="none" stroke="#E5E7EB" strokeWidth={13} strokeLinecap="round" />
+      {/* Colored progress arc */}
+      <path
+        d={arcPath}
+        fill="none"
+        stroke={gaugeColor}
+        strokeWidth={13}
+        strokeLinecap="round"
+        pathLength="100"
+        strokeDasharray={`${p} 100`}
+      />
+      {/* Needle */}
+      <line x1={cx} y1={cy} x2={nx} y2={ny} stroke="#374151" strokeWidth={2.5} strokeLinecap="round" />
+      <circle cx={cx} cy={cy} r={4.5} fill="#374151" />
+    </svg>
   );
 }
 
@@ -108,7 +145,24 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
 
   const [latestKey, setLatestKey] = useState(defaultLatest);
   const [prevKey,   setPrevKey]   = useState(defaultPrev);
-  const [resultsOpen, setResultsOpen] = useState(true);
+  const [resultsOpen, setResultsOpen] = useState(false);
+  const [prevResultsOpen, setPrevResultsOpen] = useState(true);
+
+  // Historical table state
+  type SortKey = "period" | "cartera" | "activados" | "pctActivacion" | "cajas" | "skus" | "vendedores" | "rentabilidad";
+  type SortDir = "asc" | "desc";
+  const [histSearch,       setHistSearch]       = useState("");
+  const [histPeriodFilter, setHistPeriodFilter] = useState<"all" | "3m" | "6m" | "1y">("all");
+  const [histSortKey,      setHistSortKey]      = useState<SortKey>("period");
+  const [histSortDir,      setHistSortDir]      = useState<SortDir>("desc");
+  const [histPage,         setHistPage]         = useState(1);
+  const [histPageSize,     setHistPageSize]     = useState(10);
+  const PERIOD_OPTIONS = [
+    { value: "all", label: "Todos los períodos" },
+    { value: "3m",  label: "Últimos 3 meses" },
+    { value: "6m",  label: "Últimos 6 meses" },
+    { value: "1y",  label: "Último año" },
+  ] as const;
 
   const parsePeriod = (key: string) => { const [y,m] = key.split("-").map(Number); return { year: y, month: m }; };
   const selectedPeriod = parsePeriod(latestKey);
@@ -143,56 +197,38 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
     const c = calcular(e);
     return {
       periodo: formatPeriod(e.periodYear, e.periodMonth),
+      "Total Cartera": e.totalCartera,
       Activados: Math.round(c.activadosBase),
-      Cajas: Math.round(c.cajasBase),
-      Rentabilidad: Math.round(c.rentabilidad / 1000), // in thousands for readability
+      "Clientes con Fritz": Math.round(c.fritzeBase),
     };
   });
 
-  const allEntriesDesc = [...allEntries].reverse();
-
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex items-start justify-between flex-wrap gap-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1.5">
-            <Link href="/dashboard"
-              className="flex items-center gap-1 text-sm text-gray-400 hover:text-gray-700 transition-colors">
-              <RiArrowLeftLine className="w-3.5 h-3.5" />
-              Vista Global
-            </Link>
-            <span className="text-gray-300">/</span>
-            {region && (
-              <>
-                <Link href={`/dashboard/region/${region.slug}`}
-                  className="text-sm text-gray-400 hover:text-gray-700 transition-colors">
-                  {region.name}
-                </Link>
-                <span className="text-gray-300">/</span>
-              </>
-            )}
-            <span className={cn(
-              "text-xs px-2 py-0.5 rounded-full font-medium border",
-              distributor.status === "active"
-                ? "bg-green-50 text-green-700 border-green-100"
-                : "bg-gray-100 text-gray-500 border-gray-200"
-            )}>
-              {distributor.status === "active" ? "Activo" : "Inactivo"}
-            </span>
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900">{distributor.name}</h1>
-          <p className="text-sm text-gray-400 mt-0.5">{distributor.email}</p>
+      {/* Header fila 1: breadcrumb + controles */}
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div className="flex items-center gap-2">
+          <Link href="/dashboard"
+            className="flex items-center gap-1 text-sm text-gray-400 hover:text-gray-700 transition-colors">
+            <RiArrowLeftLine className="w-3.5 h-3.5" />
+            Vista Global
+          </Link>
+          {region && (
+            <>
+              <span className="text-gray-300">/</span>
+              <Link href={`/dashboard/region/${region.slug}`}
+                className="text-sm text-gray-400 hover:text-gray-700 transition-colors">
+                {region.name}
+              </Link>
+            </>
+          )}
         </div>
 
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-2 shadow-sm">
             <span className="text-xs text-gray-400 font-medium whitespace-nowrap">Período</span>
-            <select
-              value={latestKey}
-              onChange={(e) => setLatestKey(e.target.value)}
-              className="text-sm font-medium text-gray-700 bg-transparent focus:outline-none cursor-pointer"
-            >
+            <select value={latestKey} onChange={(e) => setLatestKey(e.target.value)}
+              className="text-sm font-medium text-gray-700 bg-transparent focus:outline-none cursor-pointer">
               {availableKeys.map((k) => {
                 const { year, month } = parsePeriod(k);
                 return <option key={k} value={k}>{formatPeriod(year, month)}</option>;
@@ -202,198 +238,314 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
           <span className="text-xs text-gray-400">vs</span>
           <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-2 shadow-sm">
             <span className="text-xs text-gray-400 font-medium whitespace-nowrap">Comparar con</span>
-            <select
-              value={prevKey}
-              onChange={(e) => setPrevKey(e.target.value)}
-              className="text-sm font-medium text-gray-700 bg-transparent focus:outline-none cursor-pointer"
-            >
+            <select value={prevKey} onChange={(e) => setPrevKey(e.target.value)}
+              className="text-sm font-medium text-gray-700 bg-transparent focus:outline-none cursor-pointer">
               {availableKeys.map((k) => {
                 const { year, month } = parsePeriod(k);
                 return <option key={k} value={k}>{formatPeriod(year, month)}</option>;
               })}
             </select>
           </div>
-
-          <Link
-            href={`/dashboard/distribuidor/${slug}/cargar`}
-            className="flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium px-4 py-2 rounded-xl transition-colors duration-150"
-          >
+          <Link href={`/dashboard/distribuidor/${slug}/calculadora`}
+            className="flex items-center gap-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 text-sm font-medium px-4 py-2 rounded-xl transition-colors duration-150 shadow-sm">
+            <RiCalculatorLine className="w-4 h-4" />
+            Calculadora
+          </Link>
+          <Link href={`/dashboard/distribuidor/${slug}/cargar`}
+            className="flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium px-4 py-2 rounded-xl transition-colors duration-150">
             <RiEditLine className="w-4 h-4" />
             Cargar datos
           </Link>
         </div>
       </div>
 
+      {/* Header fila 2: identidad + cartera */}
+      <div className="flex items-center gap-5">
+        {/* Avatar */}
+        <div
+          className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 text-lg font-bold"
+          style={{ backgroundColor: `${regionColor}20`, color: regionColor }}
+        >
+          {distributor.name.charAt(0)}
+        </div>
+
+        {/* Nombre + email */}
+        <div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-gray-900 leading-none">{distributor.name}</h1>
+            <span className={cn(
+              "text-xs px-2 py-0.5 rounded-full font-medium border",
+              distributor.status === "active"
+                ? "bg-green-50 text-green-700 border-green-100"
+                : "bg-gray-100 text-gray-500 border-gray-200"
+            )}>
+              {distributor.status === "active" ? "Activo" : "Inactivo"}
+            </span>
+          </div>
+          <p className="text-sm text-gray-400 mt-0.5">{distributor.email}</p>
+        </div>
+
+        {/* Divisor + Cartera */}
+        {entry && (
+          <>
+            <div className="w-px self-stretch mx-1" style={{ backgroundColor: regionColor, opacity: 0.3 }} />
+            <div className="flex flex-col">
+              <div className="flex items-center gap-1">
+                <RiGroupLine className="w-3 h-3" style={{ color: regionColor }} />
+                <span className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: regionColor }}>Cartera</span>
+              </div>
+              <span className="text-2xl font-bold text-gray-700 tabular-nums leading-tight">{entry.totalCartera.toLocaleString()}</span>
+            </div>
+          </>
+        )}
+      </div>
+
       {entry && calc ? (
         <>
-          {/* Summary KPI cards */}
-          {(() => {
-            const kpiDefs = [
-              { label: "Total Cartera", value: entry.totalCartera, prev: prevEntry?.totalCartera, fmt: "number" as const, icon: RiGroupLine },
-              { label: "Activados", value: calc.activadosBase, prev: prevCalc?.activadosBase, fmt: "number" as const, icon: RiUserAddLine },
-              { label: "% Activación", value: entry.pctActivacion, prev: prevEntry?.pctActivacion, fmt: "percent" as const, icon: RiPieChart2Line },
-              { label: "SKUs Fritz", value: entry.totalSkusFritz, prev: prevEntry?.totalSkusFritz, fmt: "number" as const, icon: RiBox3Line },
+          {/* Resultados Calculados — gauge (velocímetro) */}
+          {[{ calcData: calc, entryData: entry, period: selectedPeriod, isOpen: prevResultsOpen, toggle: () => setPrevResultsOpen((o) => !o) }].map(({ calcData, entryData, period, isOpen, toggle }) => {
+            const fmtNum = (v: number) => Math.round(v).toLocaleString();
+            const fmtCur = (v: number) =>
+              v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(1)}M`
+              : v >= 1_000 ? `$${(v / 1_000).toFixed(1)}k`
+              : `$${Math.round(v).toLocaleString()}`;
+            const cards = [
+              { label: "Activados",               base: calcData.activadosBase,       meta: calcData.activadosMeta,           variacion: `${(entryData.pctActivacion * 100).toFixed(0)}%`,        fmt: "number"   as const, hbar: false },
+              { label: "Clientes con Fritz",       base: calcData.fritzeBase,          meta: calcData.fritzMeta,               variacion: `${(entryData.pctClientesFritz * 100).toFixed(0)}%`,     fmt: "number"   as const, hbar: false },
+              { label: "Número de SKUs",           base: calcData.skusBase,            meta: calcData.skusMeta,                variacion: `${(entryData.pctIncrementoSkus * 100).toFixed(0)}%`,    fmt: "number"   as const, hbar: false },
+              { label: "Cajas Sell Out",           base: calcData.cajasBase,           meta: calcData.cajasMeta,               variacion: `${(entryData.pctIncrementoSellOut * 100).toFixed(0)}%`, fmt: "number"   as const, hbar: false },
+              { label: "Clientes Prom x Vendedor", base: calcData.clientesPorVendedor, meta: calcData.clientesPorVendedor*1.1, variacion: null,                                                    fmt: "number"   as const, hbar: true  },
+              { label: "Cajas Prom x Cliente",     base: calcData.cajasPorCliente,     meta: calcData.cajasPorCliente*1.1,     variacion: null,                                                    fmt: "number"   as const, hbar: true  },
+              { label: "Rentabilidad aproximada",  base: calcData.rentabilidad,        meta: calcData.rentabilidad*1.15,       variacion: null,                                                    fmt: "currency" as const, hbar: true  },
+              { label: "Rebate Final",             base: calcData.rebateTotal,         meta: calcData.rebateTotal*1.1,         variacion: null,                                                    fmt: "currency" as const, hbar: true  },
             ];
+            const gaugeCards = cards.filter((c) => !c.hbar);
+            const hbarCards  = cards.filter((c) =>  c.hbar);
             return (
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                {kpiDefs.map((kpi) => {
-                  const fmtVal = (v: number) =>
-                    kpi.fmt === "percent" ? `${(v * 100).toFixed(0)}%` : Math.round(v).toLocaleString();
-                  const d = kpi.prev !== undefined ? (kpi.value - kpi.prev) / (kpi.prev || 1) : null;
-                  const positive = d === null || d >= 0;
-                  const KpiIcon = kpi.icon;
-                  return (
-                    <div key={kpi.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 hover:shadow-md transition-shadow duration-200 cursor-default">
-                      <div className="flex items-start gap-4">
-                        {/* Icon */}
-                        <div className="w-12 h-12 bg-primary-50 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5">
-                          <KpiIcon className="w-6 h-6 text-primary-600" />
-                        </div>
-                        {/* Content */}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-500 mb-1.5 truncate">{kpi.label}</p>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-[1.5rem] font-bold text-gray-900 tabular-nums tracking-tight leading-none">
-                              {fmtVal(kpi.value as number)}
-                            </span>
-                            {d !== null && (
-                              <span className={cn(
-                                "inline-flex items-center gap-0.5 text-xs font-semibold px-2 py-0.5 rounded-full",
-                                positive ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
-                              )}>
-                                {positive ? <RiArrowUpLine className="w-3 h-3" /> : <RiArrowDownLine className="w-3 h-3" />}
-                                {Math.abs(d * 100).toFixed(1)}%
-                              </span>
-                            )}
-                          </div>
-                          {kpi.prev !== undefined && (
-                            <div className="flex items-center gap-1.5 mt-2">
-                              <span className="text-xs text-gray-400">vs {formatPeriod(prevEntry!.periodYear, prevEntry!.periodMonth)}</span>
-                              <span className="text-xs font-semibold text-gray-700 tabular-nums">{fmtVal(kpi.prev as number)}</span>
+              <div key="gauge-resultados">
+                <div className="space-y-3">
+                    {/* Fila 1 — Gauges */}
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                      {gaugeCards.map((card) => {
+                        const fmtBase = card.fmt === "currency" ? fmtCur(card.base) : fmtNum(card.base);
+                        const fmtMeta = card.fmt === "currency" ? fmtCur(card.meta) : fmtNum(card.meta);
+                        const progress = Math.min((card.base / card.meta) * 100, 100);
+                        const pctCls = progress >= 80 ? "text-green-600" : progress >= 50 ? "text-amber-500" : "text-red-500";
+                        return (
+                          <div key={card.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm flex flex-col overflow-hidden">
+                            <div className="px-4 pt-4 pb-3 border-b border-gray-100">
+                              <p className="text-sm font-bold text-gray-800 leading-tight">{card.label}</p>
                             </div>
-                          )}
-                        </div>
-                      </div>
+                            <div className="px-3 pt-2 pb-4 flex flex-col items-center gap-1 flex-1">
+                              <GaugeChart progress={progress} />
+                              <span className="text-2xl font-bold text-gray-900 tabular-nums leading-none">{fmtBase}</span>
+                              {card.variacion && <span className="text-xs text-gray-400 tabular-nums">{card.variacion} variación</span>}
+                              <span className="text-xs text-gray-400 mt-0.5 tabular-nums">
+                                Meta: <span className="text-gray-600 font-medium">{fmtMeta}</span>
+                                {" "}<span className={cn("font-bold", pctCls)}>({progress.toFixed(0)}%)</span>
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                  );
-                })}
+
+                    {/* Fila 2 — Horizontal bars (compact) */}
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                      {hbarCards.map((card) => {
+                        const fmtBase = card.fmt === "currency" ? fmtCur(card.base) : fmtNum(card.base);
+                        const fmtMeta = card.fmt === "currency" ? fmtCur(card.meta) : fmtNum(card.meta);
+                        const progress = Math.min((card.base / card.meta) * 100, 100);
+                        const pctCls   = progress >= 80 ? "text-green-600"  : progress >= 50 ? "text-amber-500"  : "text-red-500";
+                        const fillHex  = progress >= 80 ? "#16a34a"         : progress >= 50 ? "#f97316"         : "#dc2626";
+                        const bgHex    = progress >= 80 ? "#dcfce7"         : progress >= 50 ? "#ffedd5"         : "#fee2e2";
+                        const textOnBar = progress > 30;
+                        return (
+                          <div key={card.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-col gap-2.5">
+                            {/* Label + % */}
+                            <div className="flex items-center justify-between gap-1">
+                              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide leading-none truncate">{card.label}</p>
+                              <span className={cn("text-xs font-bold tabular-nums flex-shrink-0", pctCls)}>{progress.toFixed(0)}%</span>
+                            </div>
+                            {/* Bullet bar */}
+                            <div className="relative h-8 rounded-lg overflow-hidden" style={{ backgroundColor: bgHex }}>
+                              <div
+                                className="absolute inset-y-0 left-0 rounded-lg"
+                                style={{ width: `${progress}%`, backgroundColor: fillHex }}
+                              />
+                              {/* Value label */}
+                              <div className="absolute inset-0 flex items-center px-2.5">
+                                <span className={cn("text-xs font-bold tabular-nums leading-none", textOnBar ? "text-white" : pctCls)}>
+                                  {fmtBase}
+                                </span>
+                              </div>
+                              {/* Target marker */}
+                              <div className="absolute inset-y-1 right-1 w-0.5 rounded-full bg-gray-400/60" />
+                            </div>
+                            {/* Meta */}
+                            <p className="text-xs text-gray-400 tabular-nums leading-none">
+                              Meta: <span className="font-semibold text-gray-600">{fmtMeta}</span>
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
               </div>
             );
-          })()}
+          })}
 
           {/* Trend chart */}
+
+
           {chartData.length > 1 && (
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-              <h2 className="text-base font-semibold text-gray-900 mb-1">Tendencia Histórica</h2>
-              <div className="flex items-center gap-4 mt-1 mb-4">
-                {[
-                  { label: "Activados",    color: regionColor },
-                  { label: "Cajas SO",     color: "#94A3B8"   },
-                  { label: "Rentabilidad", color: "#818CF8"   },
-                ].map(({ label, color }) => (
-                  <div key={label} className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }} />
-                    <span className="text-xs text-gray-500">{label}</span>
-                  </div>
-                ))}
+            <div className="flex gap-4 items-stretch">
+              {/* Evolución — 3/4 */}
+              <div className="flex-[4] bg-white rounded-2xl border border-gray-100 shadow-sm p-6 min-w-0">
+                <h2 className="text-base font-semibold text-gray-900 mb-1">Evolución de Cartera y Activaciones</h2>
+                <div className="flex items-center gap-4 mt-1 mb-4">
+                  {[
+                    { label: "Total Cartera",      color: "#94A3B8" },
+                    { label: "Activados",          color: regionColor },
+                    { label: "Clientes con Fritz", color: "#f97316" },
+                  ].map(({ label, color }) => (
+                    <div key={label} className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }} />
+                      <span className="text-xs text-gray-500">{label}</span>
+                    </div>
+                  ))}
+                </div>
+                <ResponsiveContainer width="100%" height={280}>
+                  <AreaChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="gradActivados" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor={regionColor} stopOpacity={0.15} />
+                        <stop offset="95%" stopColor={regionColor} stopOpacity={0} />
+                      </linearGradient>
+                      <linearGradient id="gradFritz" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%"  stopColor="#f97316" stopOpacity={0.12} />
+                        <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" vertical={false} />
+                    <XAxis dataKey="periodo" tick={{ fontSize: 11, fill: "#9CA3AF" }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 11, fill: "#9CA3AF" }} axisLine={false} tickLine={false} width={44}
+                      tickFormatter={(v) => v >= 1000 ? `${(v/1000).toFixed(0)}k` : String(v)} />
+                    <Tooltip
+                      contentStyle={{ borderRadius: "12px", border: "1px solid #E5E7EB", fontSize: 12 }}
+                      formatter={(v, name) => [Number(v).toLocaleString(), String(name)]}
+                    />
+                    <Area type="monotone" dataKey="Total Cartera"      stroke="#94A3B8" strokeWidth={1.5} fill="none"                dot={false} isAnimationActive={false} strokeDasharray="4 2" />
+                    <Area type="monotone" dataKey="Activados"          stroke={regionColor} strokeWidth={2} fill="url(#gradActivados)" dot={false} isAnimationActive={false} />
+                    <Area type="monotone" dataKey="Clientes con Fritz" stroke="#f97316" strokeWidth={2}    fill="url(#gradFritz)"      dot={false} isAnimationActive={false} />
+                  </AreaChart>
+                </ResponsiveContainer>
               </div>
-              <ResponsiveContainer width="100%" height={220}>
-                <AreaChart data={chartData} margin={{ top: 4, right: 52, left: 0, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="gradActivados" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor={regionColor} stopOpacity={0.15} />
-                      <stop offset="95%" stopColor={regionColor} stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" vertical={false} />
-                  <XAxis dataKey="periodo" tick={{ fontSize: 11, fill: "#9CA3AF" }} axisLine={false} tickLine={false} />
-                  <YAxis yAxisId="left" tick={{ fontSize: 11, fill: "#9CA3AF" }} axisLine={false} tickLine={false} width={44}
-                    tickFormatter={(v) => v >= 1000 ? `${(v/1000).toFixed(0)}k` : String(v)} />
-                  <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: "#818CF8" }} axisLine={false} tickLine={false} width={52}
-                    tickFormatter={(v) => v >= 1000 ? `$${(v/1000).toFixed(0)}k` : String(v)} />
-                  <Tooltip
-                    contentStyle={{ borderRadius: "12px", border: "1px solid #E5E7EB", fontSize: 12 }}
-                    formatter={(v, name) => {
-                      const n = Number(v);
-                      if (name === "Activados")    return [n.toLocaleString(), "Activados"];
-                      if (name === "Cajas")        return [n.toLocaleString(), "Cajas SO"];
-                      if (name === "Rentabilidad") return [`$${n.toLocaleString()}k`, "Rentabilidad"];
-                      return [v, name];
-                    }}
-                  />
-                  <Area yAxisId="left"  type="monotone" dataKey="Activados"    stroke={regionColor} strokeWidth={2} fill="url(#gradActivados)" dot={false} isAnimationActive={false} />
-                  <Area yAxisId="left"  type="monotone" dataKey="Cajas"        stroke="#94A3B8"    strokeWidth={1.5} fill="none" dot={false} isAnimationActive={false} strokeDasharray="4 2" />
-                  <Area yAxisId="right" type="monotone" dataKey="Rentabilidad" stroke="#818CF8"    strokeWidth={1.5} fill="none" dot={false} isAnimationActive={false} strokeDasharray="2 3" />
-                </AreaChart>
-              </ResponsiveContainer>
+
+              {/* SKUs por Categoría — 1/4 */}
+              {entry && (() => {
+                const SKU_CATS = [
+                  { name: "Salsas y aderezos",   weight: 22 },
+                  { name: "BBQ",                 weight: 13 },
+                  { name: "Salsas líquidas",     weight: 17 },
+                  { name: "Picantes y ajíes",    weight: 10 },
+                  { name: "Mayonesas",           weight: 16 },
+                  { name: "Mostazas",            weight: 12 },
+                ];
+                const CAT_COLORS = ["#0466C8","#f97316","#16a34a","#a855f7","#e11d48","#0891b2","#ca8a04","#64748b","#059669"];
+                const totalWeight = SKU_CATS.reduce((s, c) => s + c.weight, 0);
+                const totalSkus = entry.totalSkusFritz;
+                const pieData = SKU_CATS.map((c) => ({
+                  name: c.name,
+                  value: Math.round((c.weight / totalWeight) * totalSkus),
+                }));
+                return (
+                  <div className="flex-[2] bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex flex-col min-w-0">
+                    <h2 className="text-base font-semibold text-gray-900 leading-tight">SKUs por Categoría</h2>
+                    <p className="text-xs text-gray-400 mt-0.5 mb-2">{totalSkus} SKUs · {formatPeriod(selectedPeriod.year, selectedPeriod.month)}</p>
+                    <div className="flex-1 min-h-0">
+                      <ResponsiveContainer width="100%" height={230}>
+                        <PieChart>
+                          <Pie
+                            data={pieData}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={55}
+                            outerRadius={100}
+                            paddingAngle={2}
+                            dataKey="value"
+                            isAnimationActive={false}
+                          >
+                            {pieData.map((_, i) => (
+                              <Cell key={i} fill={CAT_COLORS[i % CAT_COLORS.length]} />
+                            ))}
+                          </Pie>
+                          <Tooltip
+                            contentStyle={{ borderRadius: "10px", border: "1px solid #E5E7EB", fontSize: 11 }}
+                            formatter={(v, name) => [`${v} SKUs`, String(name)]}
+                          />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    {/* Leyenda inline */}
+                    <div className="flex flex-wrap gap-x-3 gap-y-1.5 mt-3">
+                      {pieData.map((item, i) => (
+                        <div key={item.name} className="flex items-center gap-1">
+                          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: CAT_COLORS[i % CAT_COLORS.length] }} />
+                          <span className="text-[10px] text-gray-500 whitespace-nowrap">{item.name}</span>
+                          <span className="text-[10px] font-bold text-gray-700 tabular-nums">{item.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
 
-          {/* Resultados Calculados — collapsible mini-cards */}
+          {/* Resultados Calculados — barras (colapsado) */}
           {(() => {
             const fmtNum = (v: number) => Math.round(v).toLocaleString();
             const fmtCur = (v: number) =>
               v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(1)}M`
               : v >= 1_000 ? `$${(v / 1_000).toFixed(1)}k`
               : `$${Math.round(v).toLocaleString()}`;
-
-            // Exactamente los mismos datos que la tabla Resultados Calculados
-            const cards: {
-              label: string;
-              base: number;
-              meta: number;
-              variacion: string | null;
-              fmt: "number" | "currency";
-              color: string;
-            }[] = [
-              { label: "Activados",          base: calc.activadosBase,       meta: calc.activadosMeta,           variacion: `${(entry.pctActivacion * 100).toFixed(0)}%`,        fmt: "number",   color: "#3B82F6" },
-              { label: "Clientes con Fritz",  base: calc.fritzeBase,          meta: calc.fritzMeta,               variacion: `${(entry.pctClientesFritz * 100).toFixed(0)}%`,     fmt: "number",   color: "#7C3AED" },
-              { label: "SKUs en Portafolio",  base: calc.skusBase,            meta: calc.skusMeta,                variacion: `${(entry.pctIncrementoSkus * 100).toFixed(0)}%`,    fmt: "number",   color: "#DC2626" },
-              { label: "Cajas Sell Out",      base: calc.cajasBase,           meta: calc.cajasMeta,               variacion: `${(entry.pctIncrementoSellOut * 100).toFixed(0)}%`, fmt: "number",   color: "#059669" },
-              { label: "Clientes / Vendedor", base: calc.clientesPorVendedor, meta: calc.clientesPorVendedor*1.1, variacion: null,                                                 fmt: "number",   color: "#D97706" },
-              { label: "Cajas / Cliente",     base: calc.cajasPorCliente,     meta: calc.cajasPorCliente*1.1,     variacion: null,                                                 fmt: "number",   color: "#D97706" },
-              { label: "Rentabilidad",        base: calc.rentabilidad,        meta: calc.rentabilidad*1.15,       variacion: null,                                                 fmt: "currency", color: "#0891B2" },
-              { label: "Rebate Final",        base: calc.rebateTotal,         meta: calc.rebateTotal*1.1,         variacion: null,                                                 fmt: "currency", color: "#0891B2" },
+            const cards = [
+              { label: "Activados",               base: calc.activadosBase,       meta: calc.activadosMeta,           variacion: `${(entry.pctActivacion * 100).toFixed(0)}%`,        fmt: "number"   as const },
+              { label: "Clientes con Fritz",       base: calc.fritzeBase,          meta: calc.fritzMeta,               variacion: `${(entry.pctClientesFritz * 100).toFixed(0)}%`,     fmt: "number"   as const },
+              { label: "Número de SKUs",           base: calc.skusBase,            meta: calc.skusMeta,                variacion: `${(entry.pctIncrementoSkus * 100).toFixed(0)}%`,    fmt: "number"   as const },
+              { label: "Cajas Sell Out",           base: calc.cajasBase,           meta: calc.cajasMeta,               variacion: `${(entry.pctIncrementoSellOut * 100).toFixed(0)}%`, fmt: "number"   as const },
+              { label: "Clientes Prom x Vendedor", base: calc.clientesPorVendedor, meta: calc.clientesPorVendedor*1.1, variacion: null,                                                fmt: "number"   as const },
+              { label: "Cajas Prom x Cliente",     base: calc.cajasPorCliente,     meta: calc.cajasPorCliente*1.1,     variacion: null,                                                fmt: "number"   as const },
+              { label: "Rentabilidad aproximada",  base: calc.rentabilidad,        meta: calc.rentabilidad*1.15,       variacion: null,                                                fmt: "currency" as const },
+              { label: "Rebate Final",             base: calc.rebateTotal,         meta: calc.rebateTotal*1.1,         variacion: null,                                                fmt: "currency" as const },
             ];
-
+            const SEGS = 10;
             return (
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                {/* Header */}
-                <button
-                  onClick={() => setResultsOpen((o) => !o)}
-                  className="w-full flex items-center justify-between px-6 py-4 border-b border-gray-100 hover:bg-gray-50/50 transition-colors cursor-pointer"
-                >
-                  <div className="flex items-center gap-4">
+                <button onClick={() => setResultsOpen((o) => !o)} className="w-full flex items-center justify-between px-6 py-4 border-b border-gray-100 hover:bg-gray-50/50 transition-colors cursor-pointer">
+                  <div className="flex items-center gap-4 flex-wrap">
                     <h2 className="text-base font-semibold text-gray-900">Resultados Calculados</h2>
-                    <span className="text-sm text-gray-400">
-                      Total Cartera: <span className="text-xl font-bold text-gray-900">{entry.totalCartera.toLocaleString()}</span>
-                    </span>
+                    <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-primary-50 text-primary-600">{formatPeriod(selectedPeriod.year, selectedPeriod.month)}</span>
+                    <span className="text-sm text-gray-400">Total Cartera: <span className="font-bold text-gray-900">{entry.totalCartera.toLocaleString()}</span></span>
                   </div>
-                  {resultsOpen
-                    ? <RiArrowDownSLine className="w-5 h-5 text-gray-400" />
-                    : <RiArrowRightSLine className="w-5 h-5 text-gray-400" />}
+                  {resultsOpen ? <RiArrowDownSLine className="w-5 h-5 text-gray-400" /> : <RiArrowRightSLine className="w-5 h-5 text-gray-400" />}
                 </button>
-
-                {/* Cards grid — 4 por fila */}
                 {resultsOpen && (
                   <div className="p-5 grid grid-cols-2 lg:grid-cols-4 gap-3">
                     {cards.map((card) => {
                       const fmtBase = card.fmt === "currency" ? fmtCur(card.base) : fmtNum(card.base);
                       const fmtMeta = card.fmt === "currency" ? fmtCur(card.meta) : fmtNum(card.meta);
                       const progress = Math.min((card.base / card.meta) * 100, 100);
-                      const barHex = progress >= 80 ? "#16a34a" : progress >= 50 ? "#f97316" : "#dc2626";
-                      const pctCls  = progress >= 80 ? "text-green-600" : progress >= 50 ? "text-amber-500" : "text-red-500";
-                      const SEGS = 10;
                       const filled = Math.round((progress / 100) * SEGS);
+                      const barHex = progress >= 80 ? "#16a34a" : progress >= 50 ? "#f97316" : "#dc2626";
+                      const pctCls = progress >= 80 ? "text-green-600" : progress >= 50 ? "text-amber-500" : "text-red-500";
                       return (
                         <div key={card.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm flex flex-col overflow-hidden">
-                          {/* Título */}
                           <div className="px-4 pt-4 pb-3 border-b border-gray-100">
                             <p className="text-sm font-bold text-gray-800 leading-tight">{card.label}</p>
                           </div>
-                          {/* Contenido */}
                           <div className="px-4 py-4 flex flex-col gap-4 flex-1">
-                            {/* Número + variacion */}
                             <div>
                               <span className="text-3xl font-bold text-gray-900 tabular-nums leading-none">{fmtBase}</span>
                               {card.variacion && (
@@ -402,21 +554,15 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
                                 </span>
                               )}
                             </div>
-                            {/* Barra segmentada + meta */}
                             <div className="flex flex-col gap-2">
                               <div className="flex gap-0.5">
                                 {Array.from({ length: SEGS }).map((_, i) => (
-                                  <div
-                                    key={i}
-                                    className="flex-1 h-2.5 rounded-sm"
-                                    style={{ backgroundColor: i < filled ? barHex : "#E5E7EB" }}
-                                  />
+                                  <div key={i} className="flex-1 h-2.5 rounded-sm" style={{ backgroundColor: i < filled ? barHex : "#E5E7EB" }} />
                                 ))}
                               </div>
                               <span className="text-sm text-gray-400 tabular-nums">
                                 Meta: <span className="text-gray-600 font-medium">{fmtMeta}</span>
-                                {"  "}
-                                <span className={cn("font-bold", pctCls)}>({progress.toFixed(0)}%)</span>
+                                {"  "}<span className={cn("font-bold", pctCls)}>({progress.toFixed(0)}%)</span>
                               </span>
                             </div>
                           </div>
@@ -429,185 +575,252 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
             );
           })()}
 
-          {/* Calculator */}
+
+          {/* Historical table — rich */}
           {(() => {
-            const fmtVal = (v: number, fmt: "number" | "currency") => {
-              if (fmt === "currency")
-                return v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(1)}M`
-                  : v >= 1_000 ? `$${(v / 1_000).toFixed(1)}k`
-                  : `$${Math.round(v).toLocaleString()}`;
-              return Math.round(v).toLocaleString();
+            const histRows = allEntries.map((e) => {
+              const c = calcular(e);
+              const uploadMonth = e.periodMonth === 12 ? 1 : e.periodMonth + 1;
+              const uploadYear  = e.periodMonth === 12 ? e.periodYear + 1 : e.periodYear;
+              const uploadDay   = 3 + ((e.distributorId.charCodeAt(0) + e.periodMonth * 7) % 12);
+              const uploadDate  = new Date(uploadYear, uploadMonth - 1, uploadDay);
+              const uploadLabel = uploadDate.toLocaleDateString("es-VE", { day: "numeric", month: "short", year: "numeric" });
+              return {
+                periodKey:     `${e.periodYear}-${String(e.periodMonth).padStart(2, "0")}`,
+                periodLabel:   formatPeriod(e.periodYear, e.periodMonth),
+                publicado:     uploadLabel,
+                cartera:       e.totalCartera,
+                activados:     Math.round(c.activadosBase),
+                pctActivacion: e.pctActivacion,
+                cajas:         e.cajasPromedio,
+                skus:          e.totalSkusFritz,
+                vendedores:    e.numVendedores,
+                rentabilidad:  Math.round(c.rentabilidad),
+              };
+            });
+
+            const histFiltered = histRows.filter((r) => {
+              const q = histSearch.toLowerCase();
+              const cutoffMap = { "3m": "2025-12", "6m": "2025-09", "1y": "2025-03", all: "0000-00" };
+              return (!q || r.periodLabel.toLowerCase().includes(q)) && r.periodKey >= cutoffMap[histPeriodFilter];
+            });
+
+            const histSorted = [...histFiltered].sort((a, b) => {
+              let va: number | string, vb: number | string;
+              switch (histSortKey) {
+                case "period":        va = a.periodKey;     vb = b.periodKey;     break;
+                case "cartera":       va = a.cartera;       vb = b.cartera;       break;
+                case "activados":     va = a.activados;     vb = b.activados;     break;
+                case "pctActivacion": va = a.pctActivacion; vb = b.pctActivacion; break;
+                case "cajas":         va = a.cajas;         vb = b.cajas;         break;
+                case "skus":          va = a.skus;          vb = b.skus;          break;
+                case "vendedores":    va = a.vendedores;    vb = b.vendedores;    break;
+                case "rentabilidad":  va = a.rentabilidad;  vb = b.rentabilidad;  break;
+                default:              va = a.periodKey;     vb = b.periodKey;
+              }
+              if (va < vb) return histSortDir === "asc" ? -1 :  1;
+              if (va > vb) return histSortDir === "asc" ?  1 : -1;
+              return 0;
+            });
+
+            const histTotalPages = Math.max(1, Math.ceil(histSorted.length / histPageSize));
+            const histSafePage   = Math.min(histPage, histTotalPages);
+            const histPaginated  = histSorted.slice((histSafePage - 1) * histPageSize, histSafePage * histPageSize);
+
+            const histPaginationRange: (number | "...")[] = [];
+            let last = 0;
+            for (let i = 1; i <= histTotalPages; i++) {
+              if (i === 1 || i === histTotalPages || (i >= histSafePage - 1 && i <= histSafePage + 1)) {
+                if (last && i - last > 1) histPaginationRange.push("...");
+                histPaginationRange.push(i);
+                last = i;
+              }
+            }
+
+            const toggleHistSort = (key: SortKey) => {
+              if (histSortKey === key) setHistSortDir((d) => (d === "asc" ? "desc" : "asc"));
+              else { setHistSortKey(key); setHistSortDir("desc"); }
             };
 
-            const inputRows: { label: string; value: string; color: string | null }[] = [
-              { label: "Total cartera",        value: entry.totalCartera.toLocaleString(),                    color: null },
-              { label: "% Activación",         value: `${(entry.pctActivacion * 100).toFixed(0)}%`,           color: "#3B82F6" },
-              { label: "% Incr. Activos",      value: `${(entry.pctIncrementoActivos * 100).toFixed(0)}%`,    color: "#3B82F6" },
-              { label: "% Clientes Fritz",     value: `${(entry.pctClientesFritz * 100).toFixed(0)}%`,        color: "#7C3AED" },
-              { label: "% Incr. con Fritz",    value: `${(entry.pctIncrementoFritz * 100).toFixed(0)}%`,      color: "#7C3AED" },
-              { label: "Total SKUs Fritz",     value: entry.totalSkusFritz.toString(),                        color: "#DC2626" },
-              { label: "% Incr. SKUs",         value: `${(entry.pctIncrementoSkus * 100).toFixed(0)}%`,       color: "#DC2626" },
-              { label: "Cajas Sell Out",       value: entry.cajasPromedio.toLocaleString(),                   color: "#059669" },
-              { label: "% Incr. Sell Out",     value: `${(entry.pctIncrementoSellOut * 100).toFixed(0)}%`,    color: "#059669" },
-              { label: "# Vendedores",         value: entry.numVendedores.toString(),                         color: "#D97706" },
-              { label: "% Incr. Vendedores",   value: `${(entry.pctIncrementoVendedores * 100).toFixed(0)}%`, color: "#D97706" },
-              { label: "Margen Ganancia",      value: `${(entry.margenGanancia * 100).toFixed(0)}%`,          color: "#0891B2" },
-              { label: "Rebate",               value: `${(entry.rebate * 100).toFixed(0)}%`,                  color: "#0891B2" },
-            ];
+            function SortIcon({ col }: { col: SortKey }) {
+              if (histSortKey !== col)
+                return (
+                  <span className="inline-flex flex-col ml-1.5">
+                    <RiArrowUpSLine className="w-3.5 h-3.5 -mb-0.5" style={{ color: "#a3a3a3" }} />
+                    <RiArrowDownSLine className="w-3.5 h-3.5" style={{ color: "#a3a3a3" }} />
+                  </span>
+                );
+              return histSortDir === "asc"
+                ? <RiArrowUpSLine className="w-4 h-4 text-gray-900 ml-1.5" />
+                : <RiArrowDownSLine className="w-4 h-4 text-gray-900 ml-1.5" />;
+            }
 
-            const resultRows: {
-              label: string; color: string;
-              base: number; meta: number;
-              variacion: string | null;
-              fmt: "number" | "currency";
-            }[] = [
-              { label: "Activados",           color: "#3B82F6", base: calc.activadosBase,      meta: calc.activadosMeta,          variacion: `${(entry.pctActivacion * 100).toFixed(0)}%`,      fmt: "number" },
-              { label: "Clientes con Fritz",  color: "#7C3AED", base: calc.fritzeBase,          meta: calc.fritzMeta,              variacion: `${(entry.pctClientesFritz * 100).toFixed(0)}%`,   fmt: "number" },
-              { label: "SKUs en Portafolio",  color: "#DC2626", base: calc.skusBase,            meta: calc.skusMeta,               variacion: `${(entry.pctIncrementoSkus * 100).toFixed(0)}%`,  fmt: "number" },
-              { label: "Cajas Sell Out",      color: "#059669", base: calc.cajasBase,           meta: calc.cajasMeta,              variacion: `${(entry.pctIncrementoSellOut * 100).toFixed(0)}%`, fmt: "number" },
-              { label: "Clientes / Vendedor", color: "#D97706", base: calc.clientesPorVendedor, meta: calc.clientesPorVendedor*1.1, variacion: null, fmt: "number" },
-              { label: "Cajas / Cliente",     color: "#D97706", base: calc.cajasPorCliente,     meta: calc.cajasPorCliente*1.1,    variacion: null, fmt: "number" },
-              { label: "Rentabilidad",        color: "#0891B2", base: calc.rentabilidad,        meta: calc.rentabilidad*1.15,      variacion: null, fmt: "currency" },
-              { label: "Rebate Final",        color: "#0891B2", base: calc.rebateTotal,         meta: calc.rebateTotal*1.1,        variacion: null, fmt: "currency" },
-            ];
-
-            const thCls = "px-4 py-2.5 text-[11px] font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap";
+            const fmtRent = (v: number) =>
+              v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(1)}M`
+              : v >= 1_000   ? `$${(v / 1_000).toFixed(1)}k`
+              : `$${v.toLocaleString()}`;
 
             return (
-              <div className="grid gap-5 items-start" style={{ gridTemplateColumns: "2fr 3fr" }}>
-                {/* Input table */}
+              <>
                 <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                  <div className="px-5 py-3.5 border-b border-gray-100 bg-gray-50/60">
-                    <h2 className="text-sm font-semibold text-gray-700">Métricas de Entrada</h2>
+                  {/* Toolbar */}
+                  <div className="px-6 py-3.5 flex items-center gap-3 border-b border-gray-100 flex-wrap">
+                    <div className="relative w-60">
+                      <RiSearchLine className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input
+                        type="text"
+                        placeholder="Buscar período..."
+                        value={histSearch}
+                        onChange={(e) => setHistSearch(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+                      />
+                    </div>
+                    <div className="relative flex items-center border border-gray-200 rounded-lg px-3 py-2 bg-white hover:border-gray-300 transition-colors">
+                      <select
+                        value={histPeriodFilter}
+                        onChange={(e) => setHistPeriodFilter(e.target.value as typeof histPeriodFilter)}
+                        style={{ appearance: "none" }}
+                        className="text-sm text-gray-700 bg-transparent focus:outline-none cursor-pointer pr-5"
+                      >
+                        {PERIOD_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      </select>
+                      <RiArrowDownSLine className="w-4 h-4 text-gray-400 pointer-events-none absolute right-2" />
+                    </div>
+                    {histFiltered.length > 0 && (() => {
+                      const keys = histFiltered.map((r) => r.periodKey).sort();
+                      const from = keys[0].replace("-", "/");
+                      const to   = keys[keys.length - 1].replace("-", "/");
+                      return (
+                        <div className="flex items-center gap-2 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-600 bg-white">
+                          <RiCalendarLine className="w-4 h-4 text-gray-400" />
+                          <span>{from === to ? from : `${from} — ${to}`}</span>
+                        </div>
+                      );
+                    })()}
+                    <span className="ml-auto text-sm text-gray-400">{histSorted.length} registros</span>
+                    <button className="flex items-center gap-1.5 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-600 bg-white hover:border-gray-300 hover:text-gray-900 transition-colors">
+                      <RiShareBoxLine className="w-4 h-4" />
+                      Exportar
+                    </button>
                   </div>
-                  <table className="w-full text-sm border-collapse">
-                    <thead>
-                      <tr className="border-b border-gray-100">
-                        <th className={cn(thCls, "text-left w-full")}>Métrica</th>
-                        <th className={cn(thCls, "text-right")}>Valor</th>
+
+                  {/* Table */}
+                  <table className="w-full text-sm">
+                    <thead style={{ backgroundColor: "#f7f7f7", color: "#5c5c5c" }}>
+                      <tr className="border-b border-gray-200">
+                        <th onClick={() => toggleHistSort("period")} style={{ backgroundColor: "#f7f7f7", color: "#5c5c5c" }} className="px-6 py-3 text-xs font-normal capitalize cursor-pointer hover:text-gray-900 select-none transition-colors whitespace-nowrap text-left">
+                          <span className="inline-flex items-center">Período<SortIcon col="period" /></span>
+                        </th>
+                        <th style={{ backgroundColor: "#f7f7f7", color: "#5c5c5c" }} className="px-6 py-3 text-xs font-normal capitalize whitespace-nowrap text-left">Publicado</th>
+                        <th onClick={() => toggleHistSort("cartera")} style={{ backgroundColor: "#f7f7f7", color: "#5c5c5c" }} className="px-6 py-3 text-xs font-normal capitalize cursor-pointer hover:text-gray-900 select-none transition-colors whitespace-nowrap text-left">
+                          <span className="inline-flex items-center">Cartera<SortIcon col="cartera" /></span>
+                        </th>
+                        <th onClick={() => toggleHistSort("pctActivacion")} style={{ backgroundColor: "#f7f7f7", color: "#5c5c5c" }} className="px-6 py-3 text-xs font-normal capitalize cursor-pointer hover:text-gray-900 select-none transition-colors whitespace-nowrap text-left">
+                          <span className="inline-flex items-center">% Activ.<SortIcon col="pctActivacion" /></span>
+                        </th>
+                        <th onClick={() => toggleHistSort("activados")} style={{ backgroundColor: "#f7f7f7", color: "#5c5c5c" }} className="px-6 py-3 text-xs font-normal capitalize cursor-pointer hover:text-gray-900 select-none transition-colors whitespace-nowrap text-left">
+                          <span className="inline-flex items-center">Activados<SortIcon col="activados" /></span>
+                        </th>
+                        <th onClick={() => toggleHistSort("cajas")} style={{ backgroundColor: "#f7f7f7", color: "#5c5c5c" }} className="px-6 py-3 text-xs font-normal capitalize cursor-pointer hover:text-gray-900 select-none transition-colors whitespace-nowrap text-left">
+                          <span className="inline-flex items-center">Cajas SO<SortIcon col="cajas" /></span>
+                        </th>
+                        <th onClick={() => toggleHistSort("skus")} style={{ backgroundColor: "#f7f7f7", color: "#5c5c5c" }} className="px-6 py-3 text-xs font-normal capitalize cursor-pointer hover:text-gray-900 select-none transition-colors whitespace-nowrap text-left">
+                          <span className="inline-flex items-center">SKUs Fritz<SortIcon col="skus" /></span>
+                        </th>
+                        <th onClick={() => toggleHistSort("vendedores")} style={{ backgroundColor: "#f7f7f7", color: "#5c5c5c" }} className="px-6 py-3 text-xs font-normal capitalize cursor-pointer hover:text-gray-900 select-none transition-colors whitespace-nowrap text-left">
+                          <span className="inline-flex items-center">Vendedores<SortIcon col="vendedores" /></span>
+                        </th>
+                        <th onClick={() => toggleHistSort("rentabilidad")} style={{ backgroundColor: "#f7f7f7", color: "#5c5c5c" }} className="px-6 py-3 text-xs font-normal capitalize cursor-pointer hover:text-gray-900 select-none transition-colors whitespace-nowrap text-left">
+                          <span className="inline-flex items-center">Rentabilidad<SortIcon col="rentabilidad" /></span>
+                        </th>
+                        <th style={{ backgroundColor: "#f7f7f7", color: "#5c5c5c" }} className="px-6 py-3 text-xs font-normal capitalize whitespace-nowrap text-left">Acciones</th>
                       </tr>
                     </thead>
-                    <tbody>
-                      {inputRows.map((row) => (
-                        <tr key={row.label} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/50 transition-colors">
-                          <td
-                            className="py-2.5 pr-4 pl-3"
-                            style={{ borderLeft: `3px solid ${row.color ?? "#E5E7EB"}` }}
-                          >
-                            <span className="text-gray-600">{row.label}</span>
-                          </td>
-                          <td className="px-4 py-2.5 text-right font-semibold text-gray-900 tabular-nums">{row.value}</td>
+                    <tbody className="divide-y divide-gray-100">
+                      {histPaginated.length === 0 ? (
+                        <tr>
+                          <td colSpan={10} className="px-6 py-16 text-center text-sm text-gray-400">No hay registros.</td>
                         </tr>
-                      ))}
+                      ) : (
+                        histPaginated.map((row) => {
+                          const isCurrent = row.periodKey === latestKey;
+                          return (
+                            <tr
+                              key={row.periodKey}
+                              onClick={() => setLatestKey(row.periodKey)}
+                              className={cn("hover:bg-gray-50/60 transition-colors cursor-pointer", isCurrent && "bg-primary-50/50")}
+                            >
+                              <td className="px-6 py-5 font-medium whitespace-nowrap" style={{ color: "#171717" }}>
+                                {row.periodLabel}
+                                {isCurrent && <span className="ml-2 text-xs text-primary-600">(actual)</span>}
+                              </td>
+                              <td className="px-6 py-5 text-xs whitespace-nowrap text-gray-400">{row.publicado}</td>
+                              <td className="px-6 py-5 tabular-nums" style={{ color: "#171717" }}>{row.cartera.toLocaleString()}</td>
+                              <td className="px-6 py-5 tabular-nums">
+                                <span className={cn(
+                                  "inline-block text-xs font-semibold px-2 py-0.5 rounded-full",
+                                  row.pctActivacion >= 0.8 ? "bg-green-50 text-green-700"
+                                  : row.pctActivacion >= 0.5 ? "bg-amber-50 text-amber-700"
+                                  : "bg-red-50 text-red-700"
+                                )}>
+                                  {(row.pctActivacion * 100).toFixed(0)}%
+                                </span>
+                              </td>
+                              <td className="px-6 py-5 tabular-nums" style={{ color: "#171717" }}>{row.activados.toLocaleString()}</td>
+                              <td className="px-6 py-5 tabular-nums" style={{ color: "#171717" }}>{row.cajas.toLocaleString()}</td>
+                              <td className="px-6 py-5 tabular-nums" style={{ color: "#171717" }}>{row.skus}</td>
+                              <td className="px-6 py-5 tabular-nums" style={{ color: "#171717" }}>{row.vendedores}</td>
+                              <td className="px-6 py-5 font-medium tabular-nums" style={{ color: "#171717" }}>{fmtRent(row.rentabilidad)}</td>
+                              <td className="px-6 py-5" onClick={(e) => e.stopPropagation()}>
+                                <span className="text-sm font-medium text-gray-500 underline cursor-default">Editar</span>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
                     </tbody>
                   </table>
                 </div>
 
-                {/* Results table */}
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                  <div className="px-5 py-3.5 border-b border-gray-100 bg-gray-50/60">
-                    <h2 className="text-sm font-semibold text-gray-700">Resultados Calculados</h2>
+                {/* Pagination */}
+                <div className="flex items-center gap-3 text-sm text-gray-500">
+                  <span className="whitespace-nowrap">Página {histSafePage} de {histTotalPages}</span>
+                  <div className="flex-1 flex items-center justify-center gap-1">
+                    <button onClick={() => setHistPage(1)} disabled={histSafePage === 1} className="p-1.5 rounded-lg hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                      <span className="text-xs font-bold">«</span>
+                    </button>
+                    <button onClick={() => setHistPage((p) => Math.max(1, p - 1))} disabled={histSafePage === 1} className="p-1.5 rounded-lg hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                      <RiArrowLeftLine className="w-4 h-4" />
+                    </button>
+                    {histPaginationRange.map((n, i) =>
+                      n === "..." ? (
+                        <span key={`e-${i}`} className="px-2 text-gray-400">…</span>
+                      ) : (
+                        <button key={n} onClick={() => setHistPage(n as number)}
+                          className={cn("min-w-[2rem] h-8 rounded-lg text-sm font-medium transition-colors",
+                            histSafePage === n ? "bg-gray-100 text-gray-900 font-semibold" : "hover:bg-gray-50 text-gray-500")}>
+                          {n}
+                        </button>
+                      )
+                    )}
+                    <button onClick={() => setHistPage((p) => Math.min(histTotalPages, p + 1))} disabled={histSafePage === histTotalPages} className="p-1.5 rounded-lg hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                      <RiArrowRightSLine className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => setHistPage(histTotalPages)} disabled={histSafePage === histTotalPages} className="p-1.5 rounded-lg hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                      <span className="text-xs font-bold">»</span>
+                    </button>
                   </div>
-                  <table className="w-full text-sm border-collapse">
-                    <colgroup>
-                      <col className="w-auto" />
-                      <col style={{ width: "72px" }} />
-                      <col style={{ width: "72px" }} />
-                      <col style={{ width: "72px" }} />
-                      <col style={{ width: "140px" }} />
-                    </colgroup>
-                    <thead>
-                      <tr className="border-b border-gray-100">
-                        <th className={cn(thCls, "text-left")}>Métrica</th>
-                        <th className={cn(thCls, "text-right")}>Base</th>
-                        <th className={cn(thCls, "text-right")}>Variación</th>
-                        <th className={cn(thCls, "text-right")}>Meta</th>
-                        <th className={cn(thCls, "text-right")}>Logro</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {resultRows.map((row) => {
-                        const progress = Math.min((row.base / row.meta) * 100, 100);
-                        const barColor = progress >= 80 ? "bg-green-500" : progress >= 50 ? "bg-amber-500" : "bg-red-500";
-                        const pctColor = progress >= 80 ? "text-green-600" : progress >= 50 ? "text-amber-600" : "text-red-600";
-                        return (
-                          <tr key={row.label} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/50 transition-colors">
-                            <td
-                              className="py-2.5 pr-4 pl-3 font-medium text-gray-700"
-                              style={{ borderLeft: `3px solid ${row.color}` }}
-                            >
-                              {row.label}
-                            </td>
-                            <td className="px-4 py-2.5 text-right font-semibold text-gray-900 tabular-nums">{fmtVal(row.base, row.fmt)}</td>
-                            <td className="px-4 py-2.5 text-right font-medium text-gray-500 tabular-nums">
-                              {row.variacion ?? <span className="text-gray-300">—</span>}
-                            </td>
-                            <td className="px-4 py-2.5 text-right font-semibold text-gray-700 tabular-nums">{fmtVal(row.meta, row.fmt)}</td>
-                            <td className="px-4 py-2.5">
-                              <div className="flex items-center gap-1.5">
-                                <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden min-w-0">
-                                  <div className={cn("h-full rounded-full transition-all", barColor)} style={{ width: `${progress}%` }} />
-                                </div>
-                                <span className={cn("text-xs font-bold tabular-nums flex-shrink-0 w-7 text-right", pctColor)}>{progress.toFixed(0)}%</span>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                  <div className="relative flex items-center border border-gray-200 rounded-lg px-3 py-1.5 bg-white hover:border-gray-300 transition-colors">
+                    <select value={histPageSize} onChange={(e) => { setHistPageSize(Number(e.target.value)); setHistPage(1); }}
+                      style={{ appearance: "none" }} className="text-sm text-gray-700 bg-transparent focus:outline-none cursor-pointer pr-5">
+                      {[5, 10, 25, 50].map((n) => <option key={n} value={n}>{n} / pág.</option>)}
+                    </select>
+                    <RiArrowDownSLine className="w-4 h-4 text-gray-400 pointer-events-none absolute right-2" />
+                  </div>
                 </div>
-              </div>
+              </>
             );
           })()}
-
-          {/* Historical table */}
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-2">
-              <RiHistoryLine className="w-4 h-4 text-gray-400" />
-              <h2 className="text-base font-semibold text-gray-900">Histórico</h2>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-50">
-                    <th className="text-left px-6 py-3 text-xs font-medium text-gray-400 uppercase">Período</th>
-                    <th className="text-right px-4 py-3 text-xs font-medium text-gray-400 uppercase">Cartera</th>
-                    <th className="text-right px-4 py-3 text-xs font-medium text-gray-400 uppercase">% Activ.</th>
-                    <th className="text-right px-4 py-3 text-xs font-medium text-gray-400 uppercase">Activados</th>
-                    <th className="text-right px-4 py-3 text-xs font-medium text-gray-400 uppercase">Cajas</th>
-                    <th className="text-right px-6 py-3 text-xs font-medium text-gray-400 uppercase">Rentabilidad</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {allEntriesDesc.map((e) => {
-                    const c = calcular(e);
-                    const isCurrent = e.periodYear === selectedPeriod.year && e.periodMonth === selectedPeriod.month;
-                    return (
-                      <tr
-                        key={`${e.periodYear}-${e.periodMonth}`}
-                        className={cn(
-                          "hover:bg-gray-50/50 transition-colors duration-150 cursor-pointer",
-                          isCurrent && "bg-primary-50/50"
-                        )}
-                        onClick={() => setLatestKey(`${e.periodYear}-${String(e.periodMonth).padStart(2,"0")}`)}
-                      >
-                        <td className="px-6 py-3 font-medium text-gray-900">
-                          {formatPeriod(e.periodYear, e.periodMonth)}
-                          {isCurrent && <span className="ml-2 text-xs text-primary-600">(actual)</span>}
-                        </td>
-                        <td className="px-4 py-3 text-right text-gray-600">{e.totalCartera.toLocaleString()}</td>
-                        <td className="px-4 py-3 text-right text-gray-600">{(e.pctActivacion * 100).toFixed(0)}%</td>
-                        <td className="px-4 py-3 text-right text-gray-600">{Math.round(c.activadosBase).toLocaleString()}</td>
-                        <td className="px-4 py-3 text-right text-gray-600">{e.cajasPromedio.toLocaleString()}</td>
-                        <td className="px-6 py-3 text-right text-gray-600">${Math.round(c.rentabilidad).toLocaleString()}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
         </>
       ) : (
         <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center">

@@ -3,29 +3,28 @@ import { useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
-  distributors, regions, monthlyEntries, calcular, formatPeriod, delta,
+  distributors, regions, monthlyEntries, calcular, formatPeriod,
 } from "@/lib/mock-data";
 import { cn } from "@/utils/cn";
 import {
   AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell,
 } from "recharts";
-import {
-  RiArrowUpLine, RiArrowDownLine, RiArrowLeftLine,
-  RiGroupLine, RiBox3Line, RiMoneyDollarCircleLine, RiStore2Line,
-} from "@remixicon/react";
+import { RiArrowLeftLine } from "@remixicon/react";
 
 const REGION_COLORS: Record<string, string> = {
-  Capital:           "#0466C8",
-  Oriente:           "#BE3054",
-  Centro:            "#424656",
-  "Centro Occidente":"#FB6A85",
-  Occidente:         "#A7AABD",
-  Andes:             "#1A2D5A",
+  Capital:           "#3B82F6",
+  Oriente:           "#F59E0B",
+  Centro:            "#10B981",
+  "Centro Occidente":"#F43F5E",
+  Occidente:         "#8B5CF6",
+  Andes:             "#0891B2",
 };
 
 type Period = { year: number; month: number };
 
+// keep Period used by parsePeriod and state
 function ActivationBar({ pct }: { pct: number }) {
   const pctNum = pct * 100;
   const barColor = pctNum >= 70 ? "#16a34a" : pctNum >= 50 ? "#f97316" : "#dc2626";
@@ -40,48 +39,23 @@ function ActivationBar({ pct }: { pct: number }) {
   );
 }
 
-function KpiCard({
-  label, value, prev, prevPeriod, format = "number",
-  icon: Icon, color,
-}: {
-  label: string; value: number; prev: number; prevPeriod: Period;
-  format?: "number" | "currency";
-  icon: React.ComponentType<{ className?: string }>;
-  color: string;
-}) {
-  const d = delta(value, prev);
-  const positive = d >= 0;
-  const fmt = (v: number) =>
-    format === "currency" ? `$${Math.round(v).toLocaleString()}` : Math.round(v).toLocaleString();
-
+function GaugeChart({ progress }: { progress: number }) {
+  const p = Math.min(Math.max(progress, 0), 100);
+  const gaugeColor = p >= 80 ? "#16a34a" : p >= 50 ? "#f97316" : "#dc2626";
+  const cx = 90, cy = 82, r = 66;
+  const arcPath = `M ${cx - r} ${cy} A ${r} ${r} 0 1 1 ${cx + r} ${cy}`;
+  const angleMath = (1 - p / 100) * Math.PI;
+  const needleLen = r - 16;
+  const nx = cx + needleLen * Math.cos(angleMath);
+  const ny = cy - needleLen * Math.sin(angleMath);
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 hover:shadow-md transition-shadow duration-200">
-      <div className="flex items-start gap-4">
-        <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5"
-          style={{ backgroundColor: `${color}18` }}>
-          <span style={{ color }}><Icon className="w-5 h-5" /></span>
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-gray-500 mb-1 truncate">{label}</p>
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[1.5rem] font-bold text-gray-900 tabular-nums tracking-tight leading-none">
-              {fmt(value)}
-            </span>
-            <span className={cn(
-              "inline-flex items-center gap-0.5 text-xs font-semibold px-2 py-0.5 rounded-full",
-              positive ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
-            )}>
-              {positive ? <RiArrowUpLine className="w-3 h-3" /> : <RiArrowDownLine className="w-3 h-3" />}
-              {Math.abs(d * 100).toFixed(1)}%
-            </span>
-          </div>
-          <div className="flex items-center gap-1.5 mt-1.5">
-            <span className="text-xs text-gray-400">vs {formatPeriod(prevPeriod.year, prevPeriod.month)}</span>
-            <span className="text-xs font-semibold text-gray-700 tabular-nums">{fmt(prev)}</span>
-          </div>
-        </div>
-      </div>
-    </div>
+    <svg viewBox="0 0 180 90" className="w-full">
+      <path d={arcPath} fill="none" stroke="#E5E7EB" strokeWidth={13} strokeLinecap="round" />
+      <path d={arcPath} fill="none" stroke={gaugeColor} strokeWidth={13} strokeLinecap="round"
+        pathLength="100" strokeDasharray={`${p} 100`} />
+      <line x1={cx} y1={cy} x2={nx} y2={ny} stroke="#374151" strokeWidth={2.5} strokeLinecap="round" />
+      <circle cx={cx} cy={cy} r={4.5} fill="#374151" />
+    </svg>
   );
 }
 
@@ -124,12 +98,19 @@ export default function RegionPage() {
       );
       const c = e ? calcular(e) : null;
       return {
-        activados:    acc.activados    + (c?.activadosBase  ?? 0),
-        cajas:        acc.cajas        + (c?.cajasBase      ?? 0),
-        rentabilidad: acc.rentabilidad + (c?.rentabilidad   ?? 0),
-        rebate:       acc.rebate       + (c?.rebateTotal    ?? 0),
+        cartera:       acc.cartera       + (e?.totalCartera    ?? 0),
+        activados:     acc.activados     + (c?.activadosBase   ?? 0),
+        activadosMeta: acc.activadosMeta + (c?.activadosMeta   ?? 0),
+        fritz:         acc.fritz         + (c?.fritzeBase      ?? 0),
+        fritzMeta:     acc.fritzMeta     + (c?.fritzMeta       ?? 0),
+        skus:          acc.skus          + (e?.totalSkusFritz  ?? 0),
+        skusMeta:      acc.skusMeta      + (c?.skusMeta        ?? 0),
+        cajas:         acc.cajas         + (c?.cajasBase       ?? 0),
+        cajasMeta:     acc.cajasMeta     + (c?.cajasMeta       ?? 0),
+        rentabilidad:  acc.rentabilidad  + (c?.rentabilidad    ?? 0),
+        rebate:        acc.rebate        + (c?.rebateTotal     ?? 0),
       };
-    }, { activados: 0, cajas: 0, rentabilidad: 0, rebate: 0 });
+    }, { cartera: 0, activados: 0, activadosMeta: 0, fritz: 0, fritzMeta: 0, skus: 0, skusMeta: 0, cajas: 0, cajasMeta: 0, rentabilidad: 0, rebate: 0 });
 
   const cur  = sumPeriod(LATEST.year, LATEST.month);
   const prv  = sumPeriod(PREV.year,   PREV.month);
@@ -141,9 +122,9 @@ export default function RegionPage() {
     const monthNames = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
     return {
       label: `${monthNames[m - 1]} ${String(y).slice(-2)}`,
-      activados:    Math.round(s.activados),
-      cajas:        Math.round(s.cajas),
-      rentabilidad: Math.round(s.rentabilidad),
+      cartera:   Math.round(s.cartera),
+      activados: Math.round(s.activados),
+      fritz:     Math.round(s.fritz),
     };
   });
 
@@ -200,64 +181,145 @@ export default function RegionPage() {
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiCard label="Clientes Activados" value={cur.activados} prev={prv.activados} prevPeriod={PREV} icon={RiGroupLine} color={regionColor} />
-        <KpiCard label="Cajas Sell Out" value={cur.cajas} prev={prv.cajas} prevPeriod={PREV} icon={RiBox3Line} color={regionColor} />
-        <KpiCard label="Rentabilidad" value={cur.rentabilidad} prev={prv.rentabilidad} prevPeriod={PREV} format="currency" icon={RiMoneyDollarCircleLine} color={regionColor} />
-        <KpiCard label="Rebate Total" value={cur.rebate} prev={prv.rebate} prevPeriod={PREV} format="currency" icon={RiStore2Line} color={regionColor} />
+      {/* Gauge cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {[
+          { label: "Activados",          base: cur.activados, meta: cur.activadosMeta, fmt: "number"  as const },
+          { label: "Clientes con Fritz", base: cur.fritz,     meta: cur.fritzMeta,     fmt: "number"  as const },
+          { label: "Número de SKUs",     base: cur.skus,      meta: cur.skusMeta,      fmt: "number"  as const },
+          { label: "Cajas Sell Out",     base: cur.cajas,     meta: cur.cajasMeta,     fmt: "number"  as const },
+        ].map((card) => {
+          const fmtVal = (v: number) => Math.round(v).toLocaleString();
+          const progress = card.meta > 0 ? Math.min((card.base / card.meta) * 100, 100) : 0;
+          const pctCls = progress >= 80 ? "text-green-600" : progress >= 50 ? "text-amber-500" : "text-red-500";
+          return (
+            <div key={card.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm flex flex-col overflow-hidden">
+              <div className="px-4 pt-4 pb-3 border-b border-gray-100">
+                <p className="text-sm font-bold text-gray-800 leading-tight">{card.label}</p>
+              </div>
+              <div className="px-3 pt-2 pb-4 flex flex-col items-center gap-1 flex-1">
+                <GaugeChart progress={progress} />
+                <span className="text-2xl font-bold text-gray-900 tabular-nums leading-none">{fmtVal(card.base)}</span>
+                <span className="text-xs text-gray-400 mt-0.5 tabular-nums">
+                  Meta: <span className="text-gray-600 font-medium">{fmtVal(card.meta)}</span>
+                  {" "}<span className={cn("font-bold", pctCls)}>({progress.toFixed(0)}%)</span>
+                </span>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
-      {/* Trend chart */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-        <div className="mb-4">
-          <h2 className="text-base font-semibold text-gray-900">Evolución de Activados y Cajas SO</h2>
-          <p className="text-xs text-gray-400 mt-0.5">Histórico mensual — {region.name}</p>
+      {/* Trend chart + SKU pie */}
+      <div className="flex gap-4 items-stretch">
+        {/* Área 4/6 */}
+        <div className="flex-[4] bg-white rounded-2xl border border-gray-100 shadow-sm p-6 min-w-0">
+          <div className="mb-4">
+            <h2 className="text-base font-semibold text-gray-900">Evolución de Cartera y Activaciones</h2>
+            <p className="text-xs text-gray-400 mt-0.5">Histórico mensual — {region.name}</p>
+          </div>
+          <div className="flex items-center gap-4 mb-4">
+            {[
+              { label: "Total Cartera",      color: "#94A3B8" },
+              { label: "Activados",          color: regionColor },
+              { label: "Clientes con Fritz", color: "#f97316" },
+            ].map(({ label, color }) => (
+              <div key={label} className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }} />
+                <span className="text-xs text-gray-500">{label}</span>
+              </div>
+            ))}
+          </div>
+          <ResponsiveContainer width="100%" height={280}>
+            <AreaChart data={trendData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id="gAct" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%"  stopColor={regionColor} stopOpacity={0.15} />
+                  <stop offset="95%" stopColor={regionColor} stopOpacity={0} />
+                </linearGradient>
+                <linearGradient id="gFritz" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%"  stopColor="#f97316" stopOpacity={0.12} />
+                  <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" vertical={false} />
+              <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#9CA3AF" }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 11, fill: "#9CA3AF" }} axisLine={false} tickLine={false} width={44}
+                tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)} />
+              <Tooltip
+                contentStyle={{ borderRadius: "12px", border: "1px solid #E5E7EB", fontSize: 12 }}
+                formatter={(v, name) => {
+                  const n = Number(v);
+                  if (name === "cartera")   return [n.toLocaleString(), "Total Cartera"];
+                  if (name === "activados") return [n.toLocaleString(), "Activados"];
+                  if (name === "fritz")     return [n.toLocaleString(), "Clientes con Fritz"];
+                  return [v, name];
+                }}
+              />
+              <Area type="monotone" dataKey="cartera"   stroke="#94A3B8"    strokeWidth={1.5} fill="none"          dot={false} isAnimationActive={false} strokeDasharray="4 2" />
+              <Area type="monotone" dataKey="activados" stroke={regionColor} strokeWidth={2}   fill="url(#gAct)"   dot={false} isAnimationActive={false} />
+              <Area type="monotone" dataKey="fritz"     stroke="#f97316"    strokeWidth={2}    fill="url(#gFritz)" dot={false} isAnimationActive={false} />
+            </AreaChart>
+          </ResponsiveContainer>
         </div>
-        <div className="flex items-center gap-4 mb-4">
-          {[
-            { label: "Activados",    color: regionColor, dash: false },
-            { label: "Cajas SO",     color: "#94A3B8",   dash: true  },
-            { label: "Rentabilidad", color: "#818CF8",   dash: true  },
-          ].map(({ label, color }) => (
-            <div key={label} className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }} />
-              <span className="text-xs text-gray-500">{label}</span>
+
+        {/* SKUs por Categoría 2/6 */}
+        {(() => {
+          const SKU_CATS = [
+            { name: "Salsas y aderezos",  weight: 22 },
+            { name: "BBQ",                weight: 13 },
+            { name: "Salsas líquidas",    weight: 17 },
+            { name: "Picantes y ajíes",   weight: 10 },
+            { name: "Mayonesas",          weight: 16 },
+            { name: "Mostazas",           weight: 12 },
+          ];
+          const CAT_COLORS = ["#0466C8","#f97316","#16a34a","#a855f7","#e11d48","#0891b2"];
+          const totalWeight = SKU_CATS.reduce((s, c) => s + c.weight, 0);
+          const totalSkus = cur.skus;
+          const pieData = SKU_CATS.map((c) => ({
+            name: c.name,
+            value: Math.round((c.weight / totalWeight) * totalSkus),
+          }));
+          return (
+            <div className="flex-[2] bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex flex-col min-w-0">
+              <h2 className="text-base font-semibold text-gray-900 leading-tight">SKUs por Categoría</h2>
+              <p className="text-xs text-gray-400 mt-0.5 mb-2">{totalSkus} SKUs · {formatPeriod(LATEST.year, LATEST.month)}</p>
+              <div className="flex-1 min-h-0">
+                <ResponsiveContainer width="100%" height={230}>
+                  <PieChart>
+                    <Pie
+                      data={pieData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={55}
+                      outerRadius={100}
+                      paddingAngle={2}
+                      dataKey="value"
+                      isAnimationActive={false}
+                    >
+                      {pieData.map((_, i) => (
+                        <Cell key={i} fill={CAT_COLORS[i % CAT_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{ borderRadius: "10px", border: "1px solid #E5E7EB", fontSize: 11 }}
+                      formatter={(v, name) => [`${v} SKUs`, String(name)]}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="flex flex-wrap gap-x-3 gap-y-1.5 mt-3">
+                {pieData.map((item, i) => (
+                  <div key={item.name} className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: CAT_COLORS[i % CAT_COLORS.length] }} />
+                    <span className="text-[10px] text-gray-500 whitespace-nowrap">{item.name}</span>
+                    <span className="text-[10px] font-bold text-gray-700 tabular-nums">{item.value}</span>
+                  </div>
+                ))}
+              </div>
             </div>
-          ))}
-        </div>
-        <ResponsiveContainer width="100%" height={220}>
-          <AreaChart data={trendData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-            <defs>
-              <linearGradient id="gAct" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%"  stopColor={regionColor} stopOpacity={0.15} />
-                <stop offset="95%" stopColor={regionColor} stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" vertical={false} />
-            <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#9CA3AF" }} axisLine={false} tickLine={false} />
-            <YAxis yAxisId="left" tick={{ fontSize: 11, fill: "#9CA3AF" }} axisLine={false} tickLine={false} width={44}
-              tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)} />
-            <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: "#818CF8" }} axisLine={false} tickLine={false} width={52}
-              tickFormatter={(v) => v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(1)}M` : v >= 1000 ? `$${(v / 1000).toFixed(0)}k` : String(v)} />
-            <Tooltip
-              contentStyle={{ borderRadius: "12px", border: "1px solid #E5E7EB", fontSize: 12 }}
-              formatter={(v, name) => {
-                const n = Number(v);
-                if (name === "activados")    return [n.toLocaleString(), "Activados"];
-                if (name === "cajas")        return [n.toLocaleString(), "Cajas SO"];
-                if (name === "rentabilidad") return [`$${n.toLocaleString()}`, "Rentabilidad"];
-                return [v, name];
-              }}
-            />
-            <Area yAxisId="left"  type="monotone" dataKey="activados" stroke={regionColor} strokeWidth={2}
-              fill="url(#gAct)" dot={false} isAnimationActive={false} />
-            <Area yAxisId="left"  type="monotone" dataKey="cajas" stroke="#94A3B8" strokeWidth={1.5}
-              fill="none" dot={false} isAnimationActive={false} strokeDasharray="4 2" />
-            <Area yAxisId="right" type="monotone" dataKey="rentabilidad" stroke="#818CF8" strokeWidth={1.5}
-              fill="none" dot={false} isAnimationActive={false} strokeDasharray="2 3" />
-          </AreaChart>
-        </ResponsiveContainer>
+          );
+        })()}
       </div>
 
       {/* Distributors table */}

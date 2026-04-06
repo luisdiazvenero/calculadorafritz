@@ -104,11 +104,30 @@ export const distributors: Distributor[] = [
   { id: "d46", regionId: "6", name: "DISERMAT", slug: "disermat", status: "active", email: "disermat@example.com" },
 ];
 
-function randBetween(min: number, max: number) {
-  return Math.round((Math.random() * (max - min) + min) * 100) / 100;
+// Seeded PRNG (mulberry32) — deterministic on server & client
+function createRng(seed: number) {
+  let s = seed >>> 0;
+  return () => {
+    s += 0x6d2b79f5;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) >>> 0;
+    return ((t ^ (t >>> 14)) >>> 0) / 0xffffffff;
+  };
+}
+
+function hashStr(str: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
 }
 
 function generateEntry(distributorId: string, year: number, month: number): MonthlyEntry {
+  const rand = createRng(hashStr(`${distributorId}-${year}-${month}`));
+  const randBetween = (min: number, max: number) =>
+    Math.round((rand() * (max - min) + min) * 100) / 100;
   const totalCartera = Math.round(randBetween(400, 2500));
   const pctActivacion = randBetween(0.45, 0.9);
   const pctClientesFritz = randBetween(0.4, 1.0);
