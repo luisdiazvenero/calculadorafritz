@@ -228,7 +228,7 @@ export default function DistribuidorVistaGlobal({ params }: { params: Promise<{ 
             const hbarCards = [
               { label: "Clientes Prom x Vendedor", base: calc.clientesPorVendedor, meta: calc.clientesPorVendedor * 1.1, fmt: "number"   as const },
               { label: "Cajas Prom x Cliente",     base: calc.cajasPorCliente,     meta: calc.cajasPorCliente * 1.1,     fmt: "number"   as const },
-              { label: "Rentabilidad aproximada",  base: calc.rentabilidad,        meta: calc.rentabilidad * 1.15,       fmt: "currency" as const },
+              { label: "# de Vendedores",          base: entry.numVendedores,      meta: Math.round(entry.numVendedores * (1 + entry.pctIncrementoVendedores)), fmt: "number" as const },
               { label: "Rebate Final",             base: calc.rebateTotal,         meta: calc.rebateTotal * 1.1,         fmt: "currency" as const },
             ];
 
@@ -240,19 +240,24 @@ export default function DistribuidorVistaGlobal({ params }: { params: Promise<{ 
                     const fmtBase = fmtNum(card.base);
                     const fmtMeta = fmtNum(card.meta);
                     const progress = Math.min((card.base / card.meta) * 100, 100);
-                    const pctCls = progress >= 80 ? "text-green-600" : progress >= 50 ? "text-amber-500" : "text-red-500";
+                    const pillCls =
+                      progress >= 80 ? "bg-green-100 text-green-700"
+                      : progress >= 50 ? "bg-amber-100 text-amber-700"
+                      : "bg-red-100 text-red-700";
                     return (
                       <div key={card.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm flex flex-col overflow-hidden">
                         <div className="px-4 pt-4 pb-3 border-b border-gray-100">
                           <p className="text-sm font-bold text-gray-800 leading-tight">{card.label}</p>
                         </div>
-                        <div className="px-3 pt-2 pb-4 flex flex-col items-center gap-1 flex-1">
+                        <div className="px-3 pt-2 pb-4 flex flex-col items-center gap-1.5 flex-1">
                           <GaugeChart progress={progress} />
                           <span className="text-2xl font-bold text-gray-900 tabular-nums leading-none">{fmtBase}</span>
                           {card.variacion && <span className="text-xs text-gray-400 tabular-nums">{card.variacion} variación</span>}
-                          <span className="text-xs text-gray-400 mt-0.5 tabular-nums">
-                            Meta: <span className="text-gray-600 font-medium">{fmtMeta}</span>
-                            {" "}<span className={cn("font-bold", pctCls)}>({progress.toFixed(0)}%)</span>
+                          <span className={cn("px-3 py-1 rounded-full text-sm font-bold tabular-nums", pillCls)}>
+                            {progress.toFixed(0)}% de la meta
+                          </span>
+                          <span className="text-xs text-gray-400 tabular-nums">
+                            Meta: <span className="font-semibold text-gray-600">{fmtMeta}</span>
                           </span>
                         </div>
                       </div>
@@ -420,7 +425,7 @@ export default function DistribuidorVistaGlobal({ params }: { params: Promise<{ 
               { label: "Cajas Sell Out",           base: calc.cajasBase,           meta: calc.cajasMeta,               variacion: `${(entry.pctIncrementoSellOut * 100).toFixed(0)}%`, fmt: "number",   color: "#059669" },
               { label: "Clientes Prom x Vendedor", base: calc.clientesPorVendedor, meta: calc.clientesPorVendedor*1.1, variacion: null,                                                fmt: "number",   color: "#D97706" },
               { label: "Cajas Prom x Cliente",     base: calc.cajasPorCliente,     meta: calc.cajasPorCliente*1.1,     variacion: null,                                                fmt: "number",   color: "#D97706" },
-              { label: "Rentabilidad aproximada",  base: calc.rentabilidad,        meta: calc.rentabilidad*1.15,       variacion: null,                                                fmt: "currency", color: "#0891B2" },
+              { label: "# de Vendedores",          base: entry.numVendedores,      meta: Math.round(entry.numVendedores * (1 + entry.pctIncrementoVendedores)), variacion: null, fmt: "number",   color: "#0891B2" },
               { label: "Rebate Final",             base: calc.rebateTotal,         meta: calc.rebateTotal*1.1,         variacion: null,                                                fmt: "currency", color: "#0891B2" },
             ];
 

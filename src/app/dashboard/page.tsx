@@ -425,20 +425,25 @@ export default function DashboardPage() {
             { label: "Cajas Sell Out",     base: kpis.cajas,     meta: kpis.cajasMeta     },
           ].map((card) => {
             const progress = card.meta > 0 ? Math.min((card.base / card.meta) * 100, 100) : 0;
-            const pctCls = progress >= 80 ? "text-green-600" : progress >= 50 ? "text-amber-500" : "text-red-500";
+            const pillCls =
+              progress >= 80 ? "bg-green-100 text-green-700"
+              : progress >= 50 ? "bg-amber-100 text-amber-700"
+              : "bg-red-100 text-red-700";
             return (
               <div key={card.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm flex flex-col overflow-hidden">
                 <div className="px-4 pt-4 pb-3 border-b border-gray-100">
                   <p className="text-sm font-bold text-gray-800 leading-tight">{card.label}</p>
                 </div>
-                <div className="px-3 pt-2 pb-4 flex flex-col items-center gap-1 flex-1">
+                <div className="px-3 pt-2 pb-4 flex flex-col items-center gap-1.5 flex-1">
                   <GaugeChart progress={progress} />
                   <span className="text-2xl font-bold text-gray-900 tabular-nums leading-none">
                     {Math.round(card.base).toLocaleString()}
                   </span>
-                  <span className="text-xs text-gray-400 mt-0.5 tabular-nums">
-                    Meta: <span className="text-gray-600 font-medium">{Math.round(card.meta).toLocaleString()}</span>
-                    {" "}<span className={cn("font-bold", pctCls)}>({progress.toFixed(0)}%)</span>
+                  <span className={cn("px-3 py-1 rounded-full text-sm font-bold tabular-nums", pillCls)}>
+                    {progress.toFixed(0)}% de la meta
+                  </span>
+                  <span className="text-xs text-gray-400 tabular-nums">
+                    Meta: <span className="font-semibold text-gray-600">{Math.round(card.meta).toLocaleString()}</span>
                   </span>
                 </div>
               </div>

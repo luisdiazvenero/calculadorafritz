@@ -316,7 +316,7 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
               { label: "Cajas Sell Out",           base: calcData.cajasBase,           meta: calcData.cajasMeta,               variacion: `${(entryData.pctIncrementoSellOut * 100).toFixed(0)}%`, fmt: "number"   as const, hbar: false },
               { label: "Clientes Prom x Vendedor", base: calcData.clientesPorVendedor, meta: calcData.clientesPorVendedor*1.1, variacion: null,                                                    fmt: "number"   as const, hbar: true  },
               { label: "Cajas Prom x Cliente",     base: calcData.cajasPorCliente,     meta: calcData.cajasPorCliente*1.1,     variacion: null,                                                    fmt: "number"   as const, hbar: true  },
-              { label: "Rentabilidad aproximada",  base: calcData.rentabilidad,        meta: calcData.rentabilidad*1.15,       variacion: null,                                                    fmt: "currency" as const, hbar: true  },
+              { label: "# de Vendedores",           base: entryData.numVendedores,      meta: Math.round(entryData.numVendedores * (1 + entryData.pctIncrementoVendedores)), variacion: null, fmt: "number" as const, hbar: true  },
               { label: "Rebate Final",             base: calcData.rebateTotal,         meta: calcData.rebateTotal*1.1,         variacion: null,                                                    fmt: "currency" as const, hbar: true  },
             ];
             const gaugeCards = cards.filter((c) => !c.hbar);
@@ -330,19 +330,24 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
                         const fmtBase = card.fmt === "currency" ? fmtCur(card.base) : fmtNum(card.base);
                         const fmtMeta = card.fmt === "currency" ? fmtCur(card.meta) : fmtNum(card.meta);
                         const progress = Math.min((card.base / card.meta) * 100, 100);
-                        const pctCls = progress >= 80 ? "text-green-600" : progress >= 50 ? "text-amber-500" : "text-red-500";
+                        const pillCls =
+                          progress >= 80 ? "bg-green-100 text-green-700"
+                          : progress >= 50 ? "bg-amber-100 text-amber-700"
+                          : "bg-red-100 text-red-700";
                         return (
                           <div key={card.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm flex flex-col overflow-hidden">
                             <div className="px-4 pt-4 pb-3 border-b border-gray-100">
                               <p className="text-sm font-bold text-gray-800 leading-tight">{card.label}</p>
                             </div>
-                            <div className="px-3 pt-2 pb-4 flex flex-col items-center gap-1 flex-1">
+                            <div className="px-3 pt-2 pb-4 flex flex-col items-center gap-1.5 flex-1">
                               <GaugeChart progress={progress} />
                               <span className="text-2xl font-bold text-gray-900 tabular-nums leading-none">{fmtBase}</span>
                               {card.variacion && <span className="text-xs text-gray-400 tabular-nums">{card.variacion} variación</span>}
-                              <span className="text-xs text-gray-400 mt-0.5 tabular-nums">
-                                Meta: <span className="text-gray-600 font-medium">{fmtMeta}</span>
-                                {" "}<span className={cn("font-bold", pctCls)}>({progress.toFixed(0)}%)</span>
+                              <span className={cn("px-3 py-1 rounded-full text-sm font-bold tabular-nums", pillCls)}>
+                                {progress.toFixed(0)}% de la meta
+                              </span>
+                              <span className="text-xs text-gray-400 tabular-nums">
+                                Meta: <span className="font-semibold text-gray-600">{fmtMeta}</span>
                               </span>
                             </div>
                           </div>
@@ -517,7 +522,7 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
               { label: "Cajas Sell Out",           base: calc.cajasBase,           meta: calc.cajasMeta,               variacion: `${(entry.pctIncrementoSellOut * 100).toFixed(0)}%`, fmt: "number"   as const },
               { label: "Clientes Prom x Vendedor", base: calc.clientesPorVendedor, meta: calc.clientesPorVendedor*1.1, variacion: null,                                                fmt: "number"   as const },
               { label: "Cajas Prom x Cliente",     base: calc.cajasPorCliente,     meta: calc.cajasPorCliente*1.1,     variacion: null,                                                fmt: "number"   as const },
-              { label: "Rentabilidad aproximada",  base: calc.rentabilidad,        meta: calc.rentabilidad*1.15,       variacion: null,                                                fmt: "currency" as const },
+              { label: "# de Vendedores",          base: entry.numVendedores,      meta: Math.round(entry.numVendedores * (1 + entry.pctIncrementoVendedores)), variacion: null, fmt: "number"   as const },
               { label: "Rebate Final",             base: calc.rebateTotal,         meta: calc.rebateTotal*1.1,         variacion: null,                                                fmt: "currency" as const },
             ];
             const SEGS = 10;
@@ -730,16 +735,13 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
                         <th onClick={() => toggleHistSort("vendedores")} style={{ backgroundColor: "#f7f7f7", color: "#5c5c5c" }} className="px-6 py-3 text-xs font-normal capitalize cursor-pointer hover:text-gray-900 select-none transition-colors whitespace-nowrap text-left">
                           <span className="inline-flex items-center">Vendedores<SortIcon col="vendedores" /></span>
                         </th>
-                        <th onClick={() => toggleHistSort("rentabilidad")} style={{ backgroundColor: "#f7f7f7", color: "#5c5c5c" }} className="px-6 py-3 text-xs font-normal capitalize cursor-pointer hover:text-gray-900 select-none transition-colors whitespace-nowrap text-left">
-                          <span className="inline-flex items-center">Rentabilidad<SortIcon col="rentabilidad" /></span>
-                        </th>
                         <th style={{ backgroundColor: "#f7f7f7", color: "#5c5c5c" }} className="px-6 py-3 text-xs font-normal capitalize whitespace-nowrap text-left">Acciones</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {histPaginated.length === 0 ? (
                         <tr>
-                          <td colSpan={10} className="px-6 py-16 text-center text-sm text-gray-400">No hay registros.</td>
+                          <td colSpan={9} className="px-6 py-16 text-center text-sm text-gray-400">No hay registros.</td>
                         </tr>
                       ) : (
                         histPaginated.map((row) => {
@@ -770,8 +772,7 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
                               <td className="px-6 py-5 tabular-nums" style={{ color: "#171717" }}>{row.cajas.toLocaleString()}</td>
                               <td className="px-6 py-5 tabular-nums" style={{ color: "#171717" }}>{row.skus}</td>
                               <td className="px-6 py-5 tabular-nums" style={{ color: "#171717" }}>{row.vendedores}</td>
-                              <td className="px-6 py-5 font-medium tabular-nums" style={{ color: "#171717" }}>{fmtRent(row.rentabilidad)}</td>
-                              <td className="px-6 py-5" onClick={(e) => e.stopPropagation()}>
+                                  <td className="px-6 py-5" onClick={(e) => e.stopPropagation()}>
                                 <span className="text-sm font-medium text-gray-500 underline cursor-default">Editar</span>
                               </td>
                             </tr>

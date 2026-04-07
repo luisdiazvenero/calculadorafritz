@@ -265,9 +265,6 @@ export default function ReportesMensualesPage({ params }: { params: Promise<{ sl
               <th onClick={() => toggleSort("vendedores")} style={{ backgroundColor: "#f7f7f7", color: "#5c5c5c" }} className="px-6 py-3 text-xs font-normal capitalize cursor-pointer hover:text-gray-900 select-none transition-colors whitespace-nowrap text-left">
                 <span className="inline-flex items-center">Vendedores<SortIcon col="vendedores" /></span>
               </th>
-              <th onClick={() => toggleSort("rentabilidad")} style={{ backgroundColor: "#f7f7f7", color: "#5c5c5c" }} className="px-6 py-3 text-xs font-normal capitalize cursor-pointer hover:text-gray-900 select-none transition-colors whitespace-nowrap text-left">
-                <span className="inline-flex items-center">Rentabilidad<SortIcon col="rentabilidad" /></span>
-              </th>
               <th style={{ backgroundColor: "#f7f7f7", color: "#5c5c5c" }} className="px-6 py-3 text-xs font-normal capitalize text-left">
                 Acciones
               </th>
@@ -276,7 +273,7 @@ export default function ReportesMensualesPage({ params }: { params: Promise<{ sl
           <tbody className="divide-y divide-gray-100">
             {sorted.length === 0 ? (
               <tr>
-                <td colSpan={10} className="px-6 py-16 text-center text-sm text-gray-400">
+                <td colSpan={9} className="px-6 py-16 text-center text-sm text-gray-400">
                   No hay registros.{" "}
                   <Link href={`/distribuidor/${slug}/datos/nueva`} className="text-primary-600 hover:underline font-medium">
                     Cargar el primero
@@ -303,7 +300,6 @@ export default function ReportesMensualesPage({ params }: { params: Promise<{ sl
                   <td className="px-6 py-5 tabular-nums" style={{ color: "#171717" }}>{row.cajas.toLocaleString()}</td>
                   <td className="px-6 py-5 tabular-nums" style={{ color: "#171717" }}>{row.skus}</td>
                   <td className="px-6 py-5 tabular-nums" style={{ color: "#171717" }}>{row.vendedores}</td>
-                  <td className="px-6 py-5 font-medium tabular-nums" style={{ color: "#171717" }}>{fmtRent(row.rentabilidad)}</td>
                   <td className="px-6 py-5">
                     <div className="flex items-center gap-3">
                       <Link
