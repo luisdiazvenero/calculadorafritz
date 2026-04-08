@@ -139,8 +139,6 @@ export default function CalculadoraPortalPage({ params }: { params: Promise<{ sl
     { label: "Cajas Prom × Cliente",  base: preview.cajasPorCliente.toFixed(1),                 variacion: "—",                                               meta: caj_cli_meta                                                               },
     { label: "Incr. Vendedores",      base: form.numVendedores.toString(),                      variacion: "—",                                               meta: vendMeta > 0 ? vendMeta.toLocaleString() : "—"                             },
     { label: "Cajas Prom × Vendedor", base: preview.cajasPorVendedor.toFixed(0),                baseBg: "green",   variacion: "—",                           meta: caj_vend_meta,                                              metaBg: "green"  },
-    { label: "Rentabilidad aprox.",   base: "—",                                                variacion: "—",    meta: fmtCur(preview.rentabilidad), rowBg: "#DCFCE7", metaBg: "green" },
-    { label: "Rebate final período",  base: "—",                                                variacion: "—",    meta: fmtCur(preview.rebateTotal),  rowBg: "#DCFCE7", metaBg: "green" },
   ];
 
   return (

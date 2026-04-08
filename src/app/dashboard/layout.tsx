@@ -18,10 +18,10 @@ import {
   RiCalculatorLine,
   RiArrowDownSLine,
   RiArrowRightSLine,
+  RiArrowLeftSLine,
   RiLogoutBoxLine,
   RiMenuLine,
   RiCloseLine,
-  RiArrowLeftSLine,
 } from "@remixicon/react";
 import { cn } from "@/utils/cn";
 
@@ -58,17 +58,30 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {/* Brand */}
         <div className={cn(
           "border-b border-gray-100 flex items-center",
-          collapsed ? "px-3 py-5 justify-center" : "px-4 py-5 gap-3"
+          collapsed ? "flex-col gap-2 px-3 py-3" : "justify-between px-4 py-4"
         )}>
-          <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center flex-shrink-0">
-            <span className="text-white text-sm font-bold">F</span>
-          </div>
-          {!collapsed && (
-            <div>
-              <p className="text-sm font-semibold text-gray-900">Fritz</p>
-              <p className="text-xs text-gray-400">Calculadora de métricas</p>
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center flex-shrink-0">
+              <span className="text-white text-sm font-bold">F</span>
             </div>
-          )}
+            {!collapsed && (
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-gray-900">Fritz</p>
+                <p className="text-xs text-gray-400">Calculadora de métricas</p>
+              </div>
+            )}
+          </div>
+          {/* Toggle button */}
+          <button
+            onClick={() => setCollapsed((c) => !c)}
+            title={collapsed ? "Expandir" : "Colapsar"}
+            className="hidden lg:flex items-center justify-center w-7 h-7 rounded-lg bg-gray-100 border border-gray-200 text-gray-600 hover:bg-gray-200 hover:text-gray-900 transition-colors cursor-pointer flex-shrink-0"
+          >
+            {collapsed
+              ? <RiArrowRightSLine className="w-5 h-5" />
+              : <RiArrowLeftSLine className="w-5 h-5" />
+            }
+          </button>
         </div>
 
         {/* Nav */}
@@ -213,19 +226,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {/* Footer */}
         <div className="px-2 py-3 border-t border-gray-100 space-y-1">
-          {/* Collapse toggle */}
-          <button
-            onClick={() => setCollapsed((c) => !c)}
-            title={collapsed ? "Expandir sidebar" : "Colapsar sidebar"}
-            className={cn(
-              "w-full flex items-center px-3 py-2 rounded-lg text-sm text-gray-400 hover:bg-gray-50 hover:text-gray-700 transition",
-              collapsed ? "justify-center" : "gap-2"
-            )}
-          >
-            <RiArrowLeftSLine className={cn("w-4 h-4 flex-shrink-0 transition-transform duration-200", collapsed && "rotate-180")} />
-            {!collapsed && <span className="text-xs">Colapsar</span>}
-          </button>
-
           {!collapsed && (
             <>
               <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg">

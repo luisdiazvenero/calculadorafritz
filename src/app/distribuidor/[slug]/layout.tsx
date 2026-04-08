@@ -10,6 +10,7 @@ import {
   RiCalculatorLine,
   RiMenuLine,
   RiArrowLeftSLine,
+  RiArrowRightSLine,
 } from "@remixicon/react";
 
 const REGION_COLORS: Record<string, string> = {
@@ -44,17 +45,33 @@ export default function DistribuidorLayout({
   ];
 
   function SidebarContent({ isCollapsed }: { isCollapsed: boolean }) {
+    const CollapseIcon = isCollapsed ? RiArrowRightSLine : RiArrowLeftSLine;
+
     return (
       <div className="flex flex-col h-full">
-        {/* Logo */}
+        {/* Header — logo + toggle */}
         <div className={cn(
           "border-b border-gray-100 flex items-center",
-          isCollapsed ? "px-3 py-5 justify-center" : "px-5 py-5 gap-2.5"
+          isCollapsed ? "flex-col gap-2 px-3 py-3" : "justify-between px-4 py-4"
         )}>
-          <div className="w-8 h-8 rounded-lg bg-primary-600 flex items-center justify-center flex-shrink-0">
-            <span className="text-white text-xs font-bold">F</span>
+          {/* Logo */}
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-primary-600 flex items-center justify-center flex-shrink-0">
+              <span className="text-white text-xs font-bold">F</span>
+            </div>
+            {!isCollapsed && (
+              <span className="text-sm font-semibold text-gray-700 truncate">Fritz Calculadora</span>
+            )}
           </div>
-          {!isCollapsed && <span className="text-sm font-semibold text-gray-700">Fritz Calculadora</span>}
+
+          {/* Toggle button */}
+          <button
+            onClick={() => setCollapsed((c) => !c)}
+            title={isCollapsed ? "Expandir" : "Colapsar"}
+            className="hidden lg:flex items-center justify-center w-7 h-7 rounded-lg bg-gray-100 border border-gray-200 text-gray-600 hover:bg-gray-200 hover:text-gray-900 transition-colors cursor-pointer flex-shrink-0"
+          >
+            <CollapseIcon className="w-5 h-5" />
+          </button>
         </div>
 
         {/* Distributor info */}
@@ -101,21 +118,11 @@ export default function DistribuidorLayout({
         </nav>
 
         {/* Footer */}
-        <div className={cn("border-t border-gray-100 py-3", isCollapsed ? "px-2" : "px-5")}>
-          {/* Collapse toggle — desktop only */}
-          <button
-            onClick={() => setCollapsed((c) => !c)}
-            title={isCollapsed ? "Expandir sidebar" : "Colapsar sidebar"}
-            className={cn(
-              "hidden lg:flex w-full items-center px-3 py-2 rounded-lg text-xs text-gray-400 hover:bg-gray-50 hover:text-gray-700 transition mb-1",
-              isCollapsed ? "justify-center" : "gap-2"
-            )}
-          >
-            <RiArrowLeftSLine className={cn("w-4 h-4 flex-shrink-0 transition-transform duration-200", isCollapsed && "rotate-180")} />
-            {!isCollapsed && "Colapsar"}
-          </button>
-          {!isCollapsed && <p className="text-[11px] text-gray-400">Portal del Distribuidor</p>}
-        </div>
+        {!isCollapsed && (
+          <div className="px-5 py-4 border-t border-gray-100">
+            <p className="text-[11px] text-gray-400">Portal del Distribuidor</p>
+          </div>
+        )}
       </div>
     );
   }
