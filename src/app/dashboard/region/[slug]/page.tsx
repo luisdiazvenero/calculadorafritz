@@ -12,6 +12,7 @@ import {
   PieChart, Pie, Cell,
 } from "recharts";
 import { RiArrowLeftLine } from "@remixicon/react";
+import SkuTable from "@/components/SkuTable";
 
 const REGION_COLORS: Record<string, string> = {
   Capital:           "#3B82F6",
@@ -405,6 +406,7 @@ export default function RegionPage() {
         </div>
       </div>
 
+      <SkuTable />
     </div>
   );
 }

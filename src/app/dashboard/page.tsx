@@ -21,6 +21,7 @@ import {
   RiArrowUpLine,
   RiArrowDownLine,
 } from "@remixicon/react";
+import SkuTable from "@/components/SkuTable";
 
 type Period = { year: number; month: number };
 
@@ -659,6 +660,8 @@ export default function DashboardPage() {
           </table>
         </div>
       </div>
+
+      <SkuTable />
     </div>
   );
 }
