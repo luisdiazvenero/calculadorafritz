@@ -338,8 +338,8 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
                     {/* Fila 1 — Gauges */}
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                       {gaugeCards.map((card) => {
-                        const fmtBase = card.fmt === "currency" ? fmtCur(card.base) : fmtNum(card.base);
-                        const fmtMeta = card.fmt === "currency" ? fmtCur(card.meta) : fmtNum(card.meta);
+                        const fmtBase = fmtNum(card.base);
+                        const fmtMeta = fmtNum(card.meta);
                         const progress = Math.min((card.base / card.meta) * 100, 100);
                         const pillCls =
                           progress >= 80 ? "bg-green-100 text-green-700"
@@ -369,8 +369,8 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
                     {/* Fila 2 — Horizontal bars (compact) */}
                     <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
                       {hbarCards.map((card) => {
-                        const fmtBase = card.fmt === "currency" ? fmtCur(card.base) : fmtNum(card.base);
-                        const fmtMeta = card.fmt === "currency" ? fmtCur(card.meta) : fmtNum(card.meta);
+                        const fmtBase = fmtNum(card.base);
+                        const fmtMeta = fmtNum(card.meta);
                         const progress = Math.min((card.base / card.meta) * 100, 100);
                         const pctCls   = progress >= 80 ? "text-green-600"  : progress >= 50 ? "text-amber-500"  : "text-red-500";
                         const fillHex  = progress >= 80 ? "#16a34a"         : progress >= 50 ? "#f97316"         : "#dc2626";
