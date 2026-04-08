@@ -355,7 +355,7 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
                               <span className="text-2xl font-bold text-gray-900 tabular-nums leading-none">{fmtBase}</span>
                               {card.variacion && <span className="text-xs text-gray-400 tabular-nums">{card.variacion} variación</span>}
                               <span className={cn("px-3 py-1 rounded-full text-sm font-bold tabular-nums", pillCls)}>
-                                {progress.toFixed(0)}% de la meta
+                                {progress.toFixed(0)}%
                               </span>
                               <span className="text-xs text-gray-400 tabular-nums">
                                 Meta: <span className="font-semibold text-gray-600">{fmtMeta}</span>

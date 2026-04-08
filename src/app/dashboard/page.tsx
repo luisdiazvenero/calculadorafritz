@@ -441,7 +441,7 @@ export default function DashboardPage() {
                     {Math.round(card.base).toLocaleString()}
                   </span>
                   <span className={cn("px-3 py-1 rounded-full text-sm font-bold tabular-nums", pillCls)}>
-                    {progress.toFixed(0)}% de la meta
+                    {progress.toFixed(0)}%
                   </span>
                   <span className="text-xs text-gray-400 tabular-nums">
                     Meta: <span className="font-semibold text-gray-600">{Math.round(card.meta).toLocaleString()}</span>
