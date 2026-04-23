@@ -1,10 +1,10 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import {
-  distributors, regions, monthlyEntries, calcular, formatPeriod,
-} from "@/lib/mock-data";
+import { getRegionBySlug, getDistributorsByRegion, getAllEntries } from "@/lib/db";
+import { calcular, formatPeriod } from "@/lib/mock-data";
+import type { Region, Distributor, MonthlyEntry } from "@/lib/mock-data";
 import { cn } from "@/utils/cn";
 import {
   AreaChart, Area,
@@ -23,9 +23,33 @@ const REGION_COLORS: Record<string, string> = {
   Andes:             "#0891B2",
 };
 
+function generatePeriodKeys(): string[] {
+  const keys: string[] = [];
+  const now = new Date();
+  let y = 2025, m = 9;
+  while (y < now.getFullYear() || (y === now.getFullYear() && m <= now.getMonth() + 1)) {
+    keys.push(`${y}-${String(m).padStart(2, "0")}`);
+    m++; if (m > 12) { m = 1; y++; }
+  }
+  return keys;
+}
+const ALL_PERIOD_KEYS = generatePeriodKeys();
+
+function defaultPeriodKey() {
+  const now = new Date();
+  const m = now.getMonth() === 0 ? 12 : now.getMonth();
+  const y = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+  return `${y}-${String(m).padStart(2, "0")}`;
+}
+function defaultPrevKey() {
+  const now = new Date();
+  const m2 = now.getMonth() <= 1 ? 10 + now.getMonth() : now.getMonth() - 1;
+  const y2 = now.getMonth() <= 1 ? now.getFullYear() - 1 : now.getFullYear();
+  return `${y2}-${String(m2).padStart(2, "0")}`;
+}
+
 type Period = { year: number; month: number };
 
-// keep Period used by parsePeriod and state
 function ActivationBar({ pct }: { pct: number }) {
   const pctNum = pct * 100;
   const barColor = pctNum >= 70 ? "#16a34a" : pctNum >= 50 ? "#f97316" : "#dc2626";
@@ -62,22 +86,49 @@ function GaugeChart({ progress }: { progress: number }) {
 
 export default function RegionPage() {
   const { slug } = useParams<{ slug: string }>();
-  const region = regions.find((r) => r.slug === slug);
 
-  const availablePeriods = [
-    ...new Set(monthlyEntries.map((e) => `${e.periodYear}-${String(e.periodMonth).padStart(2, "0")}`)),
-  ].sort();
+  const [region,    setRegion]    = useState<Region | null>(null);
+  const [dists,     setDists]     = useState<Distributor[]>([]);
+  const [entries,   setEntries]   = useState<MonthlyEntry[]>([]);
+  const [loading,   setLoading]   = useState(true);
+
+  const [latestKey, setLatestKey] = useState(defaultPeriodKey());
+  const [prevKey,   setPrevKey]   = useState(defaultPrevKey());
+
+  useEffect(() => {
+    getRegionBySlug(slug).then((r) => {
+      setRegion(r);
+      if (!r) { setLoading(false); return; }
+      Promise.all([
+        getDistributorsByRegion(r.id),
+        getAllEntries(),
+      ]).then(([d, e]) => {
+        setDists(d);
+        setEntries(e);
+        setLoading(false);
+      });
+    });
+  }, [slug]);
 
   const parsePeriod = (key: string): Period => {
     const [y, m] = key.split("-").map(Number);
     return { year: y, month: m };
   };
 
-  const [latestKey, setLatestKey] = useState(availablePeriods[availablePeriods.length - 1] ?? "2026-02");
-  const [prevKey,   setPrevKey]   = useState(availablePeriods[availablePeriods.length - 2] ?? "2026-01");
-
   const LATEST = parsePeriod(latestKey);
   const PREV   = parsePeriod(prevKey);
+
+  if (loading) {
+    return (
+      <div className="p-6 max-w-7xl mx-auto space-y-6">
+        <div className="h-8 w-48 bg-gray-100 rounded-lg animate-pulse" />
+        <div className="grid grid-cols-4 gap-3">
+          {[0,1,2,3].map((i) => <div key={i} className="h-48 bg-gray-100 rounded-2xl animate-pulse" />)}
+        </div>
+        <div className="h-80 bg-gray-100 rounded-2xl animate-pulse" />
+      </div>
+    );
+  }
 
   if (!region) {
     return (
@@ -87,14 +138,14 @@ export default function RegionPage() {
     );
   }
 
-  const regionColor = REGION_COLORS[region.name] ?? "#94A3B8";
-  const regionDists = distributors.filter((d) => d.regionId === region.id && d.status !== "inactive");
-  const activeDists  = regionDists.filter((d) => d.status === "active");
-  const pausedDists  = regionDists.filter((d) => d.status === "paused");
+  const regionColor  = REGION_COLORS[region.name] ?? "#94A3B8";
+  const activeDists  = dists.filter((d) => d.status === "active");
+  const pausedDists  = dists.filter((d) => d.status === "paused");
+  const regionDists  = dists.filter((d) => d.status !== "inactive");
 
   const sumPeriod = (year: number, month: number) =>
     activeDists.reduce((acc, d) => {
-      const e = monthlyEntries.find(
+      const e = entries.find(
         (m) => m.distributorId === d.id && m.periodYear === year && m.periodMonth === month
       );
       const c = e ? calcular(e) : null;
@@ -114,10 +165,8 @@ export default function RegionPage() {
     }, { cartera: 0, activados: 0, activadosMeta: 0, fritz: 0, fritzMeta: 0, skus: 0, skusMeta: 0, cajas: 0, cajasMeta: 0, rentabilidad: 0, rebate: 0 });
 
   const cur  = sumPeriod(LATEST.year, LATEST.month);
-  const prv  = sumPeriod(PREV.year,   PREV.month);
 
-  // Time-series for trend chart
-  const trendData = availablePeriods.map((p) => {
+  const trendData = ALL_PERIOD_KEYS.map((p) => {
     const [y, m] = p.split("-").map(Number);
     const s = sumPeriod(y, m);
     const monthNames = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
@@ -135,7 +184,6 @@ export default function RegionPage() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          {/* Breadcrumb */}
           <Link href="/dashboard"
             className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-700 transition-colors">
             <RiArrowLeftLine className="w-4 h-4" />
@@ -162,7 +210,7 @@ export default function RegionPage() {
             <span className="text-xs text-gray-400 font-medium">Período</span>
             <select value={latestKey} onChange={(e) => setLatestKey(e.target.value)}
               className="text-sm font-medium text-gray-700 bg-transparent focus:outline-none cursor-pointer">
-              {availablePeriods.map((p) => {
+              {[...ALL_PERIOD_KEYS].reverse().map((p) => {
                 const { year, month } = parsePeriod(p);
                 return <option key={p} value={p}>{formatPeriod(year, month)}</option>;
               })}
@@ -173,7 +221,7 @@ export default function RegionPage() {
             <span className="text-xs text-gray-400 font-medium">Comparar con</span>
             <select value={prevKey} onChange={(e) => setPrevKey(e.target.value)}
               className="text-sm font-medium text-gray-700 bg-transparent focus:outline-none cursor-pointer">
-              {availablePeriods.map((p) => {
+              {[...ALL_PERIOD_KEYS].reverse().map((p) => {
                 const { year, month } = parsePeriod(p);
                 return <option key={p} value={p}>{formatPeriod(year, month)}</option>;
               })}
@@ -218,7 +266,7 @@ export default function RegionPage() {
 
       {/* Trend chart + SKU pie */}
       <div className="flex gap-4 items-stretch">
-        {/* Área 4/6 */}
+        {/* Area 4/6 */}
         <div className="flex-[4] bg-white rounded-2xl border border-gray-100 shadow-sm p-6 min-w-0">
           <div className="mb-4">
             <h2 className="text-base font-semibold text-gray-900">Evolución de Cartera y Activaciones</h2>
@@ -293,16 +341,8 @@ export default function RegionPage() {
               <div className="flex-1 min-h-0">
                 <ResponsiveContainer width="100%" height={230}>
                   <PieChart>
-                    <Pie
-                      data={pieData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={55}
-                      outerRadius={100}
-                      paddingAngle={2}
-                      dataKey="value"
-                      isAnimationActive={false}
-                    >
+                    <Pie data={pieData} cx="50%" cy="50%" innerRadius={55} outerRadius={100}
+                      paddingAngle={2} dataKey="value" isAnimationActive={false}>
                       {pieData.map((_, i) => (
                         <Cell key={i} fill={CAT_COLORS[i % CAT_COLORS.length]} />
                       ))}
@@ -351,7 +391,7 @@ export default function RegionPage() {
             </thead>
             <tbody>
               {regionDists.map((d, i) => {
-                const entry = monthlyEntries.find(
+                const entry = entries.find(
                   (m) => m.distributorId === d.id && m.periodYear === LATEST.year && m.periodMonth === LATEST.month
                 );
                 const calc = entry ? calcular(entry) : null;

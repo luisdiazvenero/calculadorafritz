@@ -1,6 +1,8 @@
 "use client";
-import { useState } from "react";
-import { distributors as initialDistributors, regions, type Distributor } from "@/lib/mock-data";
+import { useState, useEffect } from "react";
+import { getDistributors, getRegions } from "@/lib/db";
+import { updateDistributorStatus } from "@/lib/actions";
+import type { Distributor, Region } from "@/lib/mock-data";
 import { cn } from "@/utils/cn";
 import {
   RiAddLine,
@@ -10,16 +12,25 @@ import {
   RiSearchLine,
 } from "@remixicon/react";
 
-type Status = "all" | "active" | "paused"; // "paused" displays as "Inactivo"
+type Status = "all" | "active" | "paused";
 
 export default function DistribuidoresPage() {
-  const [dists, setDists] = useState(initialDistributors);
-  const [search, setSearch] = useState("");
+  const [dists, setDists]     = useState<Distributor[]>([]);
+  const [regions, setRegions] = useState<Region[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch]   = useState("");
   const [statusFilter, setStatusFilter] = useState<Status>("all");
   const [regionFilter, setRegionFilter] = useState("all");
   const [showAddModal, setShowAddModal] = useState(false);
-  const [newDist, setNewDist] = useState({ name: "", email: "", regionId: "1" });
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+
+  useEffect(() => {
+    Promise.all([getDistributors(), getRegions()]).then(([d, r]) => {
+      setDists(d);
+      setRegions(r);
+      setLoading(false);
+    });
+  }, []);
 
   const filtered = dists.filter((d) => {
     const matchSearch =
@@ -30,36 +41,30 @@ export default function DistribuidoresPage() {
     return matchSearch && matchStatus && matchRegion;
   });
 
-  const toggleStatus = (id: string) => {
+  const toggleStatus = async (id: string) => {
+    const d = dists.find((x) => x.id === id);
+    if (!d) return;
+    const newStatus = d.status === "active" ? "paused" : "active";
     setDists((prev) =>
-      prev.map((d) =>
-        d.id === id ? { ...d, status: (d.status === "active" ? "paused" : "active") as Distributor["status"] } : d
-      )
+      prev.map((x) => (x.id === id ? { ...x, status: newStatus as Distributor["status"] } : x))
     );
+    await updateDistributorStatus(id, newStatus);
   };
 
-  const deleteDist = (id: string) => {
-    setDists((prev) => prev.map((d) => (d.id === id ? { ...d, status: "inactive" as Distributor["status"] } : d)));
+  const deleteDist = async (id: string) => {
+    setDists((prev) => prev.filter((d) => d.id !== id));
     setDeleteConfirm(null);
+    await updateDistributorStatus(id, "inactive");
   };
 
-  const addDist = () => {
-    if (!newDist.name || !newDist.email) return;
-    const id = `d${Date.now()}`;
-    setDists((prev) => [
-      ...prev,
-      {
-        id,
-        regionId: newDist.regionId,
-        name: newDist.name,
-        slug: newDist.name.toLowerCase().replace(/\s+/g, "-"),
-        status: "active" as Distributor["status"],
-        email: newDist.email,
-      },
-    ]);
-    setNewDist({ name: "", email: "", regionId: "1" });
-    setShowAddModal(false);
-  };
+  if (loading) {
+    return (
+      <div className="p-6 max-w-7xl mx-auto space-y-6">
+        <div className="h-8 w-48 bg-gray-100 rounded-lg animate-pulse" />
+        <div className="h-64 bg-gray-100 rounded-2xl animate-pulse" />
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
@@ -193,54 +198,18 @@ export default function DistribuidoresPage() {
       {showAddModal && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Nuevo Distribuidor</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Nombre</label>
-                <input
-                  value={newDist.name}
-                  onChange={(e) => setNewDist({ ...newDist, name: e.target.value })}
-                  className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="Nombre del distribuidor"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
-                <input
-                  value={newDist.email}
-                  onChange={(e) => setNewDist({ ...newDist, email: e.target.value })}
-                  type="email"
-                  className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="email@distribuidor.com"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Región</label>
-                <select
-                  value={newDist.regionId}
-                  onChange={(e) => setNewDist({ ...newDist, regionId: e.target.value })}
-                  className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
-                >
-                  {regions.map((r) => (
-                    <option key={r.id} value={r.id}>{r.name}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="flex gap-3 mt-6">
-              <button
-                onClick={() => setShowAddModal(false)}
-                className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={addDist}
-                className="flex-1 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium px-4 py-2.5 rounded-xl transition"
-              >
-                Agregar
-              </button>
-            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Nuevo Distribuidor</h3>
+            <p className="text-sm text-gray-500 mb-5">
+              Para agregar un nuevo distribuidor, créalo desde el panel de Supabase: primero inserta el registro en la tabla{" "}
+              <code className="bg-gray-100 px-1 rounded text-xs">distributors</code> y luego crea el usuario de autenticación con{" "}
+              <code className="bg-gray-100 px-1 rounded text-xs">app_metadata.role = "distribuidor"</code>.
+            </p>
+            <button
+              onClick={() => setShowAddModal(false)}
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
+            >
+              Cerrar
+            </button>
           </div>
         </div>
       )}

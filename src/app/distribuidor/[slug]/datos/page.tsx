@@ -1,6 +1,8 @@
 "use client";
-import { use, useState, useMemo } from "react";
-import { distributors, monthlyEntries, calcular, formatPeriod } from "@/lib/mock-data";
+import { use, useState, useEffect, useMemo } from "react";
+import { calcular, formatPeriod } from "@/lib/mock-data";
+import type { Distributor, MonthlyEntry } from "@/lib/mock-data";
+import { getDistributorBySlug, getEntriesByDistributor } from "@/lib/db";
 import { cn } from "@/utils/cn";
 import Link from "next/link";
 import {
@@ -16,7 +18,10 @@ type SortDir = "asc" | "desc";
 
 export default function ReportesMensualesPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
-  const distributor = distributors.find((d) => d.slug === slug);
+
+  const [distributor, setDistributor] = useState<Distributor | null>(null);
+  const [entries, setEntries] = useState<MonthlyEntry[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const [search, setSearch]             = useState("");
   const [periodFilter, setPeriodFilter] = useState<"all" | "3m" | "6m" | "1y">("all");
@@ -32,19 +37,25 @@ export default function ReportesMensualesPage({ params }: { params: Promise<{ sl
     { value: "1y",  label: "Último año" },
   ] as const;
 
-  if (!distributor) {
-    return <div className="p-6 text-gray-500">Distribuidor no encontrado.</div>;
-  }
+  useEffect(() => {
+    getDistributorBySlug(slug).then((d) => {
+      setDistributor(d);
+      if (!d) { setLoading(false); return; }
+      getEntriesByDistributor(d.id).then((e) => {
+        setEntries(e);
+        setLoading(false);
+      });
+    });
+  }, [slug]);
 
-  const allEntries = monthlyEntries
-    .filter((m) => m.distributorId === distributor.id)
-    .map((e) => ({ entry: e, calc: calcular(e) }));
+  // All hooks must come before any conditional return
+  const allEntries = useMemo(
+    () => entries.map((e) => ({ entry: e, calc: calcular(e) })),
+    [entries]
+  );
 
   const totalEntries = allEntries.length;
-  const sorted0 = [...allEntries].sort((a, b) =>
-    b.entry.periodYear * 100 + b.entry.periodMonth - (a.entry.periodYear * 100 + a.entry.periodMonth)
-  );
-  const latestEntry  = sorted0[0];
+  const latestEntry  = allEntries[0]; // entries are newest-first from DB
   const avgActivados = totalEntries > 0
     ? Math.round(allEntries.reduce((s, r) => s + r.calc.activadosBase, 0) / totalEntries)
     : 0;
@@ -52,25 +63,25 @@ export default function ReportesMensualesPage({ params }: { params: Promise<{ sl
     ? Math.round(allEntries.reduce((s, r) => s + r.calc.cajasBase, 0) / totalEntries)
     : 0;
 
-  const rows = allEntries.map(({ entry: e, calc: c }) => {
-    // Simulate upload date: 5th day of the following month
+  const rows = useMemo(() => allEntries.map(({ entry: e, calc: c }) => {
     const uploadMonth = e.periodMonth === 12 ? 1 : e.periodMonth + 1;
     const uploadYear  = e.periodMonth === 12 ? e.periodYear + 1 : e.periodYear;
     const uploadDay   = 3 + ((e.distributorId.charCodeAt(0) + e.periodMonth * 7) % 12);
     const uploadDate  = new Date(uploadYear, uploadMonth - 1, uploadDay);
     const uploadLabel = uploadDate.toLocaleDateString("es-VE", { day: "numeric", month: "short", year: "numeric" });
-    return ({
-    periodKey:     `${e.periodYear}-${String(e.periodMonth).padStart(2, "0")}`,
-    periodLabel:   formatPeriod(e.periodYear, e.periodMonth),
-    publicado:     uploadLabel,
-    cartera:       e.totalCartera,
-    activados:     Math.round(c.activadosBase),
-    pctActivacion: e.pctActivacion,
-    cajas:         e.cajasPromedio,
-    skus:          e.totalSkusFritz,
-    vendedores:    e.numVendedores,
-    rentabilidad:  Math.round(c.rentabilidad),
-  });});
+    return {
+      periodKey:     `${e.periodYear}-${String(e.periodMonth).padStart(2, "0")}`,
+      periodLabel:   formatPeriod(e.periodYear, e.periodMonth),
+      publicado:     uploadLabel,
+      cartera:       e.totalCartera,
+      activados:     Math.round(c.activadosBase),
+      pctActivacion: e.pctActivacion,
+      cajas:         e.cajasPromedio,
+      skus:          e.totalSkusFritz,
+      vendedores:    e.numVendedores,
+      rentabilidad:  Math.round(c.rentabilidad),
+    };
+  }), [allEntries]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -143,6 +154,20 @@ export default function ReportesMensualesPage({ params }: { params: Promise<{ sl
     : v >= 1_000   ? `$${(v / 1_000).toFixed(1)}k`
     : `$${v.toLocaleString()}`;
 
+  if (loading) {
+    return (
+      <div className="p-8 space-y-8">
+        <div className="h-8 w-64 bg-gray-100 rounded-lg animate-pulse" />
+        <div className="h-32 bg-gray-100 rounded-2xl animate-pulse" />
+        <div className="h-96 bg-gray-100 rounded-2xl animate-pulse" />
+      </div>
+    );
+  }
+
+  if (!distributor) {
+    return <div className="p-6 text-gray-500">Distribuidor no encontrado.</div>;
+  }
+
   return (
     <div className="p-8 space-y-8">
       {/* Page header */}
@@ -160,13 +185,13 @@ export default function ReportesMensualesPage({ params }: { params: Promise<{ sl
         </Link>
       </div>
 
-      {/* Summary stats — inline, no card boxes */}
+      {/* Summary stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 divide-x divide-gray-100 border border-gray-100 rounded-2xl bg-white shadow-sm overflow-hidden">
         {[
           { label: "Total registros",    value: totalEntries.toString(),                                                                        sub: "meses cargados", icon: RiFileChartLine, color: "text-primary-600",  bg: "bg-primary-50"  },
           { label: "Último período",     value: latestEntry ? formatPeriod(latestEntry.entry.periodYear, latestEntry.entry.periodMonth) : "—",  sub: latestEntry ? `${latestEntry.entry.periodYear}` : "Sin datos", icon: RiCalendarLine, color: "text-violet-600", bg: "bg-violet-50"  },
           { label: "Promedio activados", value: avgActivados.toLocaleString(),                                                                  sub: "por período",    icon: RiUserLine,      color: "text-emerald-600", bg: "bg-emerald-50" },
-          { label: "Promedio cajas SO",  value: avgCajas.toLocaleString(),                                                                      sub: "por período",    icon: RiBox3Line,       color: "text-amber-600",   bg: "bg-amber-50"   },
+          { label: "Promedio cajas SO",  value: avgCajas.toLocaleString(),                                                                      sub: "por período",    icon: RiBox3Line,      color: "text-amber-600",   bg: "bg-amber-50"   },
         ].map((stat, i) => {
           const Icon = stat.icon;
           return (
@@ -188,7 +213,6 @@ export default function ReportesMensualesPage({ params }: { params: Promise<{ sl
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         {/* Toolbar */}
         <div className="px-6 py-3.5 flex items-center gap-3 border-b border-gray-100 flex-wrap">
-          {/* Search */}
           <div className="relative w-60">
             <RiSearchLine className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
@@ -200,7 +224,6 @@ export default function ReportesMensualesPage({ params }: { params: Promise<{ sl
             />
           </div>
 
-          {/* Period preset */}
           <div className="relative flex items-center border border-gray-200 rounded-lg px-3 py-2 bg-white hover:border-gray-300 transition-colors">
             <select
               value={periodFilter}
@@ -215,7 +238,6 @@ export default function ReportesMensualesPage({ params }: { params: Promise<{ sl
             <RiArrowDownSLine className="w-4 h-4 text-gray-400 pointer-events-none absolute right-2" />
           </div>
 
-          {/* Date range display */}
           {filtered.length > 0 && (() => {
             const keys = filtered.map((r) => r.periodKey).sort();
             const from = keys[0].replace("-", "/");
@@ -230,7 +252,6 @@ export default function ReportesMensualesPage({ params }: { params: Promise<{ sl
 
           <span className="ml-auto text-sm text-gray-400">{sorted.length} registros</span>
 
-          {/* Export */}
           <button className="flex items-center gap-1.5 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-600 bg-white hover:border-gray-300 hover:text-gray-900 transition-colors">
             <RiShareBoxLine className="w-4 h-4" />
             Exportar
@@ -322,15 +343,12 @@ export default function ReportesMensualesPage({ params }: { params: Promise<{ sl
             )}
           </tbody>
         </table>
-
       </div>
 
-      {/* Pagination — outside table card */}
+      {/* Pagination */}
       <div className="mt-10 flex items-center gap-3 text-sm text-gray-500">
-        {/* Page label */}
         <span className="whitespace-nowrap">Página {safePage} de {totalPages}</span>
 
-        {/* Page buttons — centered */}
         <div className="flex-1 flex items-center justify-center gap-1">
           <button onClick={() => setPage(1)} disabled={safePage === 1} className="p-1.5 rounded-lg hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
             <span className="text-xs font-bold">«</span>
@@ -364,7 +382,6 @@ export default function ReportesMensualesPage({ params }: { params: Promise<{ sl
           </button>
         </div>
 
-        {/* Page size selector */}
         <div className="relative flex items-center border border-gray-200 rounded-lg px-3 py-1.5 bg-white hover:border-gray-300 transition-colors">
           <select
             value={pageSize}

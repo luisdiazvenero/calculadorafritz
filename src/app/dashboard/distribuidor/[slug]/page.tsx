@@ -1,6 +1,10 @@
 "use client";
-import { use, useState, useMemo } from "react";
-import { distributors, regions, monthlyEntries, calcular, formatPeriod, delta } from "@/lib/mock-data";
+import { use, useState, useEffect } from "react";
+import { calcular, formatPeriod, delta } from "@/lib/mock-data";
+import type { Distributor, Region, MonthlyEntry } from "@/lib/mock-data";
+import { getDistributorBySlug, getRegions, getEntriesByDistributor } from "@/lib/db";
+import { deleteMonthlyEntry } from "@/lib/actions";
+import { ALL_PERIOD_KEYS, defaultPeriodKey, defaultPrevKey } from "@/lib/periods";
 import { cn } from "@/utils/cn";
 import Link from "next/link";
 import {
@@ -57,19 +61,14 @@ function GaugeChart({ progress }: { progress: number }) {
   const p = Math.min(Math.max(progress, 0), 100);
   const gaugeColor = p >= 80 ? "#16a34a" : p >= 50 ? "#f97316" : "#dc2626";
   const cx = 90, cy = 82, r = 66;
-  // Top semicircle path: from left (cx-r, cy) clockwise-on-screen to right (cx+r, cy)
-  // sweep=1 = clockwise in SVG coords (y-down) → goes UP through top ✓
   const arcPath = `M ${cx - r} ${cy} A ${r} ${r} 0 1 1 ${cx + r} ${cy}`;
-  // Needle angle: 0% = left (π rad), 100% = right (0 rad)
   const angleMath = (1 - p / 100) * Math.PI;
   const needleLen = r - 16;
   const nx = cx + needleLen * Math.cos(angleMath);
   const ny = cy - needleLen * Math.sin(angleMath);
   return (
     <svg viewBox="0 0 180 90" className="w-full">
-      {/* Background track */}
       <path d={arcPath} fill="none" stroke="#E5E7EB" strokeWidth={13} strokeLinecap="round" />
-      {/* Colored progress arc */}
       <path
         d={arcPath}
         fill="none"
@@ -79,75 +78,24 @@ function GaugeChart({ progress }: { progress: number }) {
         pathLength="100"
         strokeDasharray={`${p} 100`}
       />
-      {/* Needle */}
       <line x1={cx} y1={cy} x2={nx} y2={ny} stroke="#374151" strokeWidth={2.5} strokeLinecap="round" />
       <circle cx={cx} cy={cy} r={4.5} fill="#374151" />
     </svg>
   );
 }
 
-function CompactResult({
-  label,
-  base,
-  meta,
-  prevBase,
-  format = "number",
-}: {
-  label: string;
-  base: number;
-  meta: number;
-  prevBase?: number;
-  format?: "number" | "percent" | "currency";
-}) {
-  const fmt = (v: number) => {
-    if (format === "percent") return `${(v * 100).toFixed(1)}%`;
-    if (format === "currency")
-      return v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(1)}M`
-        : v >= 1_000 ? `$${(v / 1_000).toFixed(1)}k`
-        : `$${Math.round(v).toLocaleString()}`;
-    return Math.round(v).toLocaleString();
-  };
-  const progress = Math.min((base / meta) * 100, 100);
-  const barColor = progress >= 80 ? "bg-green-500" : progress >= 50 ? "bg-amber-500" : "bg-red-500";
-  const textColor = progress >= 80 ? "text-green-600" : progress >= 50 ? "text-amber-600" : "text-red-600";
-  return (
-    <div>
-      {/* Row 1: metric name (full width, no truncate) + delta badge */}
-      <div className="flex items-center justify-between gap-2 mb-1">
-        <span className="text-sm font-semibold text-gray-800">{label}</span>
-        {prevBase !== undefined && <DeltaBadge current={base} previous={prevBase} />}
-      </div>
-      {/* Row 2: large value + meta + progress bar + % */}
-      <div className="flex items-center gap-2">
-        <span className="text-base font-bold text-gray-900 tabular-nums leading-none">{fmt(base)}</span>
-        <span className="text-xs text-gray-400 flex-shrink-0">/ {fmt(meta)}</span>
-        <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden min-w-0">
-          <div className={cn("h-full rounded-full", barColor)} style={{ width: `${progress}%` }} />
-        </div>
-        <span className={cn("text-xs font-bold tabular-nums w-7 text-right flex-shrink-0", textColor)}>{progress.toFixed(0)}%</span>
-      </div>
-    </div>
-  );
-}
-
 export default function DistribuidorPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
-  const distributor = distributors.find((d) => d.slug === slug);
 
-  const allDistEntries = distributor
-    ? monthlyEntries
-        .filter((m) => m.distributorId === distributor.id)
-        .sort((a, b) => a.periodYear * 100 + a.periodMonth - (b.periodYear * 100 + b.periodMonth))
-    : [];
-  const availableKeys = allDistEntries.map((e) => `${e.periodYear}-${String(e.periodMonth).padStart(2,"0")}`);
-  const defaultLatest = availableKeys[availableKeys.length - 1] ?? "2026-02";
-  const defaultPrev   = availableKeys[availableKeys.length - 2] ?? "2026-01";
+  const [distributor, setDistributor] = useState<Distributor | null>(null);
+  const [region, setRegion] = useState<Region | null>(null);
+  const [entries, setEntries] = useState<MonthlyEntry[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const [latestKey, setLatestKey] = useState(defaultLatest);
-  const [prevKey,   setPrevKey]   = useState(defaultPrev);
+  const [latestKey, setLatestKey] = useState(defaultPeriodKey());
+  const [prevKey,   setPrevKey]   = useState(defaultPrevKey());
   const [prevResultsOpen, setPrevResultsOpen] = useState(true);
 
-  // Historical table state
   type SortKey = "period" | "cartera" | "activados" | "pctActivacion" | "cajas" | "skus" | "vendedores" | "rentabilidad";
   type SortDir = "asc" | "desc";
   const [histSearch,       setHistSearch]       = useState("");
@@ -160,7 +108,9 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
   const [skuOpen,  setSkuOpen]  = useState(true);
   const [histOpen, setHistOpen] = useState(true);
 
-  // SKU table state
+  const [confirmDeleteKey, setConfirmDeleteKey] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
   const [skuSearch,     setSkuSearch]     = useState("");
   const [skuCatFilter,  setSkuCatFilter]  = useState("all");
   const [skuPresFilter, setSkuPresFilter] = useState("all");
@@ -169,6 +119,7 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
   const [skuSortKey,    setSkuSortKey]    = useState<"sku" | "categoria" | "presentacion" | "tamano">("sku");
   const [skuSortDir,    setSkuSortDir]    = useState<"asc" | "desc">("asc");
   const [skuPageSize,   setSkuPageSize]   = useState(12);
+
   const PERIOD_OPTIONS = [
     { value: "all", label: "Todos los períodos" },
     { value: "3m",  label: "Últimos 3 meses" },
@@ -176,9 +127,36 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
     { value: "1y",  label: "Último año" },
   ] as const;
 
+  useEffect(() => {
+    Promise.all([getDistributorBySlug(slug), getRegions()]).then(([d, regions]) => {
+      setDistributor(d);
+      if (d) {
+        setRegion(regions.find((r) => r.id === d.regionId) ?? null);
+        getEntriesByDistributor(d.id).then((e) => {
+          setEntries(e);
+          setLoading(false);
+        });
+      } else {
+        setLoading(false);
+      }
+    });
+  }, [slug]);
+
   const parsePeriod = (key: string) => { const [y,m] = key.split("-").map(Number); return { year: y, month: m }; };
   const selectedPeriod = parsePeriod(latestKey);
   const prevPeriodSel  = parsePeriod(prevKey);
+
+  if (loading) {
+    return (
+      <div className="p-6 space-y-6">
+        <div className="h-8 w-64 bg-gray-100 rounded-lg animate-pulse" />
+        <div className="grid grid-cols-4 gap-3">
+          {[1,2,3,4].map((i) => <div key={i} className="h-48 bg-gray-100 rounded-2xl animate-pulse" />)}
+        </div>
+        <div className="h-80 bg-gray-100 rounded-2xl animate-pulse" />
+      </div>
+    );
+  }
 
   if (!distributor) {
     return (
@@ -189,22 +167,22 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
     );
   }
 
-  const region = regions.find((r) => r.id === distributor.regionId);
   const regionColor = REGION_COLORS[region?.name ?? ""] ?? "#0466C8";
 
-  const entry = monthlyEntries.find(
-    (m) => m.distributorId === distributor.id && m.periodYear === selectedPeriod.year && m.periodMonth === selectedPeriod.month
+  // entries from DB are newest-first; sort ascending for chart
+  const allEntries = [...entries].sort(
+    (a, b) => a.periodYear * 100 + a.periodMonth - (b.periodYear * 100 + b.periodMonth)
   );
-  const prevEntry = monthlyEntries.find(
-    (m) => m.distributorId === distributor.id && m.periodYear === prevPeriodSel.year && m.periodMonth === prevPeriodSel.month
-  );
+
+  const entry = entries.find(
+    (m) => m.periodYear === selectedPeriod.year && m.periodMonth === selectedPeriod.month
+  ) ?? null;
+  const prevEntry = entries.find(
+    (m) => m.periodYear === prevPeriodSel.year && m.periodMonth === prevPeriodSel.month
+  ) ?? null;
 
   const calc = entry ? calcular(entry) : null;
-  const prevCalc = prevEntry ? calcular(prevEntry) : null;
 
-  const allEntries = allDistEntries;
-
-  // Build area chart data (oldest → newest)
   const chartData = allEntries.map((e) => {
     const c = calcular(e);
     return {
@@ -241,7 +219,7 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
             <span className="text-xs text-gray-400 font-medium whitespace-nowrap">Período</span>
             <select value={latestKey} onChange={(e) => setLatestKey(e.target.value)}
               className="text-sm font-medium text-gray-700 bg-transparent focus:outline-none cursor-pointer">
-              {availableKeys.map((k) => {
+              {ALL_PERIOD_KEYS.slice().reverse().map((k) => {
                 const { year, month } = parsePeriod(k);
                 return <option key={k} value={k}>{formatPeriod(year, month)}</option>;
               })}
@@ -252,7 +230,7 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
             <span className="text-xs text-gray-400 font-medium whitespace-nowrap">Comparar con</span>
             <select value={prevKey} onChange={(e) => setPrevKey(e.target.value)}
               className="text-sm font-medium text-gray-700 bg-transparent focus:outline-none cursor-pointer">
-              {availableKeys.map((k) => {
+              {ALL_PERIOD_KEYS.slice().reverse().map((k) => {
                 const { year, month } = parsePeriod(k);
                 return <option key={k} value={k}>{formatPeriod(year, month)}</option>;
               })}
@@ -273,7 +251,6 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
 
       {/* Header fila 2: identidad + cartera */}
       <div className="flex items-center gap-5">
-        {/* Avatar */}
         <div
           className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 text-lg font-bold"
           style={{ backgroundColor: `${regionColor}20`, color: regionColor }}
@@ -281,7 +258,6 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
           {distributor.name.charAt(0)}
         </div>
 
-        {/* Nombre + email */}
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-bold text-gray-900 leading-none">{distributor.name}</h1>
@@ -297,7 +273,6 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
           <p className="text-sm text-gray-400 mt-0.5">{distributor.email}</p>
         </div>
 
-        {/* Divisor + Cartera */}
         {entry && (
           <>
             <div className="w-px self-stretch mx-1" style={{ backgroundColor: regionColor, opacity: 0.3 }} />
@@ -314,109 +289,95 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
 
       {entry && calc ? (
         <>
-          {/* Resultados Calculados — gauge (velocímetro) */}
-          {[{ calcData: calc, entryData: entry, period: selectedPeriod, isOpen: prevResultsOpen, toggle: () => setPrevResultsOpen((o) => !o) }].map(({ calcData, entryData, period, isOpen, toggle }) => {
+          {/* Resultados Calculados — gauge */}
+          {[{ calcData: calc, entryData: entry, period: selectedPeriod }].map(({ calcData, entryData }) => {
             const fmtNum = (v: number) => Math.round(v).toLocaleString();
-            const fmtCur = (v: number) =>
-              v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(1)}M`
-              : v >= 1_000 ? `$${(v / 1_000).toFixed(1)}k`
-              : `$${Math.round(v).toLocaleString()}`;
             const cards = [
-              { label: "Activados",               base: calcData.activadosBase,       meta: calcData.activadosMeta,           variacion: `${(entryData.pctActivacion * 100).toFixed(0)}%`,        fmt: "number"   as const, hbar: false },
-              { label: "Clientes con Fritz",       base: calcData.fritzeBase,          meta: calcData.fritzMeta,               variacion: `${(entryData.pctClientesFritz * 100).toFixed(0)}%`,     fmt: "number"   as const, hbar: false },
-              { label: "Número de SKUs",           base: calcData.skusBase,            meta: calcData.skusMeta,                variacion: `${(entryData.pctIncrementoSkus * 100).toFixed(0)}%`,    fmt: "number"   as const, hbar: false },
-              { label: "Cajas Sell Out",           base: calcData.cajasBase,           meta: calcData.cajasMeta,               variacion: `${(entryData.pctIncrementoSellOut * 100).toFixed(0)}%`, fmt: "number"   as const, hbar: false },
-              { label: "Clientes Prom x Vendedor", base: calcData.clientesPorVendedor, meta: calcData.clientesPorVendedor*1.1, variacion: null,                                                    fmt: "number"   as const, hbar: true  },
-              { label: "Cajas Prom x Cliente",     base: calcData.cajasPorCliente,     meta: calcData.cajasPorCliente*1.1,     variacion: null,                                                    fmt: "number"   as const, hbar: true  },
-              { label: "# de Vendedores",           base: entryData.numVendedores,      meta: Math.round(entryData.numVendedores * (1 + entryData.pctIncrementoVendedores)), variacion: null, fmt: "number" as const, hbar: true  },
+              { label: "Activados",               base: calcData.activadosBase,       meta: calcData.activadosMeta,           variacion: `${(entryData.pctActivacion * 100).toFixed(0)}%`,        hbar: false },
+              { label: "Clientes con Fritz",       base: calcData.fritzeBase,          meta: calcData.fritzMeta,               variacion: `${(entryData.pctClientesFritz * 100).toFixed(0)}%`,     hbar: false },
+              { label: "Número de SKUs",           base: calcData.skusBase,            meta: calcData.skusMeta,                variacion: `${(entryData.pctIncrementoSkus * 100).toFixed(0)}%`,    hbar: false },
+              { label: "Cajas Sell Out",           base: calcData.cajasBase,           meta: calcData.cajasMeta,               variacion: `${(entryData.pctIncrementoSellOut * 100).toFixed(0)}%`, hbar: false },
+              { label: "Clientes Prom x Vendedor", base: calcData.clientesPorVendedor, meta: calcData.clientesPorVendedor*1.1, variacion: null,                                                    hbar: true  },
+              { label: "Cajas Prom x Cliente",     base: calcData.cajasPorCliente,     meta: calcData.cajasPorCliente*1.1,     variacion: null,                                                    hbar: true  },
+              { label: "# de Vendedores",          base: entryData.numVendedores,      meta: Math.round(entryData.numVendedores * (1 + entryData.pctIncrementoVendedores)), variacion: null, hbar: true },
             ];
             const gaugeCards = cards.filter((c) => !c.hbar);
             const hbarCards  = cards.filter((c) =>  c.hbar);
             return (
               <div key="gauge-resultados">
                 <div className="space-y-3">
-                    {/* Fila 1 — Gauges */}
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                      {gaugeCards.map((card) => {
-                        const fmtBase = fmtNum(card.base);
-                        const fmtMeta = fmtNum(card.meta);
-                        const progress = Math.min((card.base / card.meta) * 100, 100);
-                        const pillCls =
-                          progress >= 80 ? "bg-green-100 text-green-700"
-                          : progress >= 50 ? "bg-amber-100 text-amber-700"
-                          : "bg-red-100 text-red-700";
-                        return (
-                          <div key={card.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm flex flex-col overflow-hidden">
-                            <div className="px-4 pt-4 pb-3 border-b border-gray-100">
-                              <p className="text-sm font-bold text-gray-800 leading-tight">{card.label}</p>
-                            </div>
-                            <div className="px-3 pt-2 pb-4 flex flex-col items-center gap-1.5 flex-1">
-                              <GaugeChart progress={progress} />
-                              <span className="text-2xl font-bold text-gray-900 tabular-nums leading-none">{fmtBase}</span>
-                              {card.variacion && <span className="text-xs text-gray-400 tabular-nums">{card.variacion} variación</span>}
-                              <span className={cn("px-3 py-1 rounded-full text-sm font-bold tabular-nums", pillCls)}>
-                                {progress.toFixed(0)}%
-                              </span>
-                              <span className="text-xs text-gray-400 tabular-nums">
-                                Meta: <span className="font-semibold text-gray-600">{fmtMeta}</span>
-                              </span>
-                            </div>
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                    {gaugeCards.map((card) => {
+                      const fmtBase = fmtNum(card.base);
+                      const fmtMeta = fmtNum(card.meta);
+                      const progress = Math.min((card.base / card.meta) * 100, 100);
+                      const pillCls =
+                        progress >= 80 ? "bg-green-100 text-green-700"
+                        : progress >= 50 ? "bg-amber-100 text-amber-700"
+                        : "bg-red-100 text-red-700";
+                      return (
+                        <div key={card.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm flex flex-col overflow-hidden">
+                          <div className="px-4 pt-4 pb-3 border-b border-gray-100">
+                            <p className="text-sm font-bold text-gray-800 leading-tight">{card.label}</p>
                           </div>
-                        );
-                      })}
-                    </div>
-
-                    {/* Fila 2 — Horizontal bars (compact) */}
-                    <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-                      {hbarCards.map((card) => {
-                        const fmtBase = fmtNum(card.base);
-                        const fmtMeta = fmtNum(card.meta);
-                        const progress = Math.min((card.base / card.meta) * 100, 100);
-                        const pctCls   = progress >= 80 ? "text-green-600"  : progress >= 50 ? "text-amber-500"  : "text-red-500";
-                        const fillHex  = progress >= 80 ? "#16a34a"         : progress >= 50 ? "#f97316"         : "#dc2626";
-                        const bgHex    = progress >= 80 ? "#dcfce7"         : progress >= 50 ? "#ffedd5"         : "#fee2e2";
-                        const textOnBar = progress > 30;
-                        return (
-                          <div key={card.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-col gap-2.5">
-                            {/* Label + % */}
-                            <div className="flex items-center justify-between gap-1">
-                              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide leading-none truncate">{card.label}</p>
-                              <span className={cn("text-xs font-bold tabular-nums flex-shrink-0", pctCls)}>{progress.toFixed(0)}%</span>
-                            </div>
-                            {/* Bullet bar */}
-                            <div className="relative h-8 rounded-lg overflow-hidden" style={{ backgroundColor: bgHex }}>
-                              <div
-                                className="absolute inset-y-0 left-0 rounded-lg"
-                                style={{ width: `${progress}%`, backgroundColor: fillHex }}
-                              />
-                              {/* Value label */}
-                              <div className="absolute inset-0 flex items-center px-2.5">
-                                <span className={cn("text-xs font-bold tabular-nums leading-none", textOnBar ? "text-white" : pctCls)}>
-                                  {fmtBase}
-                                </span>
-                              </div>
-                              {/* Target marker */}
-                              <div className="absolute inset-y-1 right-1 w-0.5 rounded-full bg-gray-400/60" />
-                            </div>
-                            {/* Meta */}
-                            <p className="text-xs text-gray-400 tabular-nums leading-none">
+                          <div className="px-3 pt-2 pb-4 flex flex-col items-center gap-1.5 flex-1">
+                            <GaugeChart progress={progress} />
+                            <span className="text-2xl font-bold text-gray-900 tabular-nums leading-none">{fmtBase}</span>
+                            {card.variacion && <span className="text-xs text-gray-400 tabular-nums">{card.variacion} variación</span>}
+                            <span className={cn("px-3 py-1 rounded-full text-sm font-bold tabular-nums", pillCls)}>
+                              {progress.toFixed(0)}%
+                            </span>
+                            <span className="text-xs text-gray-400 tabular-nums">
                               Meta: <span className="font-semibold text-gray-600">{fmtMeta}</span>
-                            </p>
+                            </span>
                           </div>
-                        );
-                      })}
-                    </div>
+                        </div>
+                      );
+                    })}
                   </div>
+
+                  <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+                    {hbarCards.map((card) => {
+                      const fmtBase = fmtNum(card.base);
+                      const fmtMeta = fmtNum(card.meta);
+                      const progress = Math.min((card.base / card.meta) * 100, 100);
+                      const pctCls   = progress >= 80 ? "text-green-600"  : progress >= 50 ? "text-amber-500"  : "text-red-500";
+                      const fillHex  = progress >= 80 ? "#16a34a"         : progress >= 50 ? "#f97316"         : "#dc2626";
+                      const bgHex    = progress >= 80 ? "#dcfce7"         : progress >= 50 ? "#ffedd5"         : "#fee2e2";
+                      const textOnBar = progress > 30;
+                      return (
+                        <div key={card.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-col gap-2.5">
+                          <div className="flex items-center justify-between gap-1">
+                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide leading-none truncate">{card.label}</p>
+                            <span className={cn("text-xs font-bold tabular-nums flex-shrink-0", pctCls)}>{progress.toFixed(0)}%</span>
+                          </div>
+                          <div className="relative h-8 rounded-lg overflow-hidden" style={{ backgroundColor: bgHex }}>
+                            <div
+                              className="absolute inset-y-0 left-0 rounded-lg"
+                              style={{ width: `${progress}%`, backgroundColor: fillHex }}
+                            />
+                            <div className="absolute inset-0 flex items-center px-2.5">
+                              <span className={cn("text-xs font-bold tabular-nums leading-none", textOnBar ? "text-white" : pctCls)}>
+                                {fmtBase}
+                              </span>
+                            </div>
+                            <div className="absolute inset-y-1 right-1 w-0.5 rounded-full bg-gray-400/60" />
+                          </div>
+                          <p className="text-xs text-gray-400 tabular-nums leading-none">
+                            Meta: <span className="font-semibold text-gray-600">{fmtMeta}</span>
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             );
           })}
 
           {/* Trend chart */}
-
-
           {chartData.length > 1 && (
             <div className="grid grid-cols-3 gap-3 items-stretch">
-              {/* Evolución — 2/3 */}
               <div className="col-span-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-6 min-w-0">
                 <h2 className="text-base font-semibold text-gray-900 mb-1">Evolución de Cartera y Activaciones</h2>
                 <div className="flex items-center gap-4 mt-1 mb-4">
@@ -458,8 +419,7 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
                 </ResponsiveContainer>
               </div>
 
-              {/* SKUs por Categoría — 1/4 */}
-              {entry && (() => {
+              {(() => {
                 const SKU_CATS = [
                   { name: "Salsas y aderezos",   weight: 22 },
                   { name: "BBQ",                 weight: 13 },
@@ -503,7 +463,6 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
                         </PieChart>
                       </ResponsiveContainer>
                     </div>
-                    {/* Leyenda inline */}
                     <div className="flex flex-wrap gap-x-3 gap-y-1.5 mt-3">
                       {pieData.map((item, i) => (
                         <div key={item.name} className="flex items-center gap-1">
@@ -530,7 +489,6 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
               "Mostazas":          "#0891b2",
             };
             const SKU_DATA: { sku: string; categoria: string; presentacion: string; tamano: string; tamanoG: number }[] = [
-              // Salsas y aderezos (11)
               { sku: "Salsa Sabor a Tocineta",                 categoria: "Salsas y aderezos", presentacion: "Doypack",     tamano: "145 g",        tamanoG: 145   },
               { sku: "Salsa Sabor a Tocineta",                 categoria: "Salsas y aderezos", presentacion: "PET",         tamano: "240 g",        tamanoG: 240   },
               { sku: "Salsa Sabor a Queso Cheddar",            categoria: "Salsas y aderezos", presentacion: "Doypack",     tamano: "145 g",        tamanoG: 145   },
@@ -542,12 +500,10 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
               { sku: "Salsa Sabor a Maíz",                     categoria: "Salsas y aderezos", presentacion: "Homotético",  tamano: "740 g",        tamanoG: 740   },
               { sku: "Salsa Tártara Estándar",                 categoria: "Salsas y aderezos", presentacion: "PET",         tamano: "240 g",        tamanoG: 240   },
               { sku: "Salsa Tártara",                          categoria: "Salsas y aderezos", presentacion: "Homotético",  tamano: "740 g",        tamanoG: 740   },
-              // BBQ (4)
               { sku: "Salsa BBQ Estándar",  categoria: "BBQ", presentacion: "PET",         tamano: "290 g",  tamanoG: 290  },
               { sku: "BBQ Homotético",      categoria: "BBQ", presentacion: "Homotético",  tamano: "930 g",  tamanoG: 930  },
               { sku: "BBQ Medio Galón",     categoria: "BBQ", presentacion: "Medio Galón", tamano: "2 kg",   tamanoG: 2000 },
               { sku: "BBQ Galón",           categoria: "BBQ", presentacion: "Galón",       tamano: "4.1 kg", tamanoG: 4100 },
-              // Salsas líquidas (8)
               { sku: "Salsa de Ajo",        categoria: "Salsas líquidas", presentacion: "Frasco", tamano: "150 cc", tamanoG: 150  },
               { sku: "Salsa de Ajo",        categoria: "Salsas líquidas", presentacion: "Frasco", tamano: "300 cc", tamanoG: 300  },
               { sku: "Salsa de Ajo Galón",  categoria: "Salsas líquidas", presentacion: "Galón",  tamano: "3.6 L",  tamanoG: 3600 },
@@ -556,13 +512,11 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
               { sku: "Salsa Inglesa Galón", categoria: "Salsas líquidas", presentacion: "Galón",  tamano: "3.6 L",  tamanoG: 3600 },
               { sku: "Salsa de Soya",       categoria: "Salsas líquidas", presentacion: "Frasco", tamano: "150 cc", tamanoG: 150  },
               { sku: "Salsa de Soya Galón", categoria: "Salsas líquidas", presentacion: "Galón",  tamano: "3.6 L",  tamanoG: 3600 },
-              // Picantes y ajíes (5)
               { sku: "Salsa Picante Homotético",              categoria: "Picantes y ajíes", presentacion: "Homotético", tamano: "790 g", tamanoG: 790 },
               { sku: "Salsa Ají Picante Estándar",            categoria: "Picantes y ajíes", presentacion: "PET",        tamano: "250 g", tamanoG: 250 },
               { sku: "Salsa de Ají Dulce Estándar",           categoria: "Picantes y ajíes", presentacion: "PET",        tamano: "250 g", tamanoG: 250 },
               { sku: "Salsa Picantico Criollo",               categoria: "Picantes y ajíes", presentacion: "PET",        tamano: "310 g", tamanoG: 310 },
               { sku: "Picantina: Salsa con Tomate + Picante", categoria: "Picantes y ajíes", presentacion: "PET",        tamano: "260 g", tamanoG: 260 },
-              // Mayonesas (8)
               { sku: "Mayonesa Estándar",             categoria: "Mayonesas", presentacion: "PET",         tamano: "240 g",        tamanoG: 240  },
               { sku: "Mayonesa Homotético",           categoria: "Mayonesas", presentacion: "Homotético",  tamano: "750 g",        tamanoG: 750  },
               { sku: "Mayonesa Kilo",                 categoria: "Mayonesas", presentacion: "PET",         tamano: "850 g",        tamanoG: 850  },
@@ -571,7 +525,6 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
               { sku: "Mayonesa (frasco azul)",         categoria: "Mayonesas", presentacion: "Frasco",      tamano: "375 g",        tamanoG: 375  },
               { sku: "Doypack Preparado de Mayonesa",  categoria: "Mayonesas", presentacion: "Doypack",     tamano: "150 g / 930 g",tamanoG: 150  },
               { sku: "Mayo Deli",                     categoria: "Mayonesas", presentacion: "Galón",       tamano: "3.1 kg",       tamanoG: 3100 },
-              // Mostazas (6)
               { sku: "Mostaza Estándar",          categoria: "Mostazas", presentacion: "PET",         tamano: "250 g",        tamanoG: 250  },
               { sku: "Mostaza Kilo",              categoria: "Mostazas", presentacion: "PET",         tamano: "1 kg",         tamanoG: 1000 },
               { sku: "Mostaza Medio Galón",       categoria: "Mostazas", presentacion: "Medio Galón", tamano: "1.8 kg",       tamanoG: 1800 },
@@ -661,7 +614,6 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
 
             return (
               <>
-                {/* Título fuera de la tarjeta */}
                 <div className="mt-14 mb-2 pl-6 pr-6 flex items-center justify-between">
                   <div>
                     <h2 className="text-lg font-semibold text-gray-900">SKUs Simulados por Categoría</h2>
@@ -674,7 +626,6 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
                 </div>
 
                 {skuOpen && <div className={cn("bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden", skuTotalPages <= 1 && "mb-14")}>
-                  {/* Toolbar */}
                   <div className="px-6 py-3.5 flex items-center gap-3 border-b border-gray-100 flex-wrap">
                     <div className="relative w-60">
                       <RiSearchLine className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -705,7 +656,6 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
                     </button>
                   </div>
 
-                  {/* Table */}
                   <table className="w-full text-sm">
                     <thead style={{ backgroundColor: "#f7f7f7", color: "#5c5c5c" }}>
                       <tr className="border-b border-gray-200">
@@ -746,7 +696,6 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
                   </table>
                 </div>}
 
-                {/* Pagination */}
                 {skuOpen && skuTotalPages > 1 && (
                   <div className="flex items-center gap-3 text-sm text-gray-500 mb-14 pl-6">
                     <span className="whitespace-nowrap">Página {skuSafePage} de {skuTotalPages}</span>
@@ -775,20 +724,20 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
                         <span className="text-xs font-bold">»</span>
                       </button>
                     </div>
-                  <div className="relative flex items-center border border-gray-200 rounded-lg px-3 py-1.5 bg-white hover:border-gray-300 transition-colors">
-                    <select value={skuPageSize} onChange={(e) => { setSkuPageSize(Number(e.target.value)); setSkuPage(1); }}
-                      style={{ appearance: "none" }} className="text-sm text-gray-700 bg-transparent focus:outline-none cursor-pointer pr-5">
-                      {[10, 12, 25, 50].map((n) => <option key={n} value={n}>{n} / pág.</option>)}
-                    </select>
-                    <RiArrowDownSLine className="w-4 h-4 text-gray-400 pointer-events-none absolute right-2" />
-                  </div>
+                    <div className="relative flex items-center border border-gray-200 rounded-lg px-3 py-1.5 bg-white hover:border-gray-300 transition-colors">
+                      <select value={skuPageSize} onChange={(e) => { setSkuPageSize(Number(e.target.value)); setSkuPage(1); }}
+                        style={{ appearance: "none" }} className="text-sm text-gray-700 bg-transparent focus:outline-none cursor-pointer pr-5">
+                        {[10, 12, 25, 50].map((n) => <option key={n} value={n}>{n} / pág.</option>)}
+                      </select>
+                      <RiArrowDownSLine className="w-4 h-4 text-gray-400 pointer-events-none absolute right-2" />
+                    </div>
                   </div>
                 )}
               </>
             );
           })()}
 
-          {/* Historical table — rich */}
+          {/* Historical table */}
           {(() => {
             const histRows = allEntries.map((e) => {
               const c = calcular(e);
@@ -867,11 +816,6 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
                 : <RiArrowDownSLine className="w-4 h-4 text-gray-900 ml-1.5" />;
             }
 
-            const fmtRent = (v: number) =>
-              v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(1)}M`
-              : v >= 1_000   ? `$${(v / 1_000).toFixed(1)}k`
-              : `$${v.toLocaleString()}`;
-
             return (
               <>
                 <div className="mt-14 mb-2 pl-6 pr-6 flex items-center justify-between">
@@ -885,7 +829,6 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
                   </button>
                 </div>
                 {histOpen && <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                  {/* Toolbar */}
                   <div className="px-6 py-3.5 flex items-center gap-3 border-b border-gray-100 flex-wrap">
                     <div className="relative w-60">
                       <RiSearchLine className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -926,7 +869,6 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
                     </button>
                   </div>
 
-                  {/* Table */}
                   <table className="w-full text-sm">
                     <thead style={{ backgroundColor: "#f7f7f7", color: "#5c5c5c" }}>
                       <tr className="border-b border-gray-200">
@@ -989,8 +931,47 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
                               <td className="px-6 py-5 tabular-nums" style={{ color: "#171717" }}>{row.cajas.toLocaleString()}</td>
                               <td className="px-6 py-5 tabular-nums" style={{ color: "#171717" }}>{row.skus}</td>
                               <td className="px-6 py-5 tabular-nums" style={{ color: "#171717" }}>{row.vendedores}</td>
-                                  <td className="px-6 py-5" onClick={(e) => e.stopPropagation()}>
-                                <span className="text-sm font-medium text-gray-500 underline cursor-default">Editar</span>
+                              <td className="px-6 py-5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                                {confirmDeleteKey === row.periodKey ? (
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs text-gray-500">¿Eliminar?</span>
+                                    <button
+                                      onClick={async () => {
+                                        setDeleting(true);
+                                        const entryId = `${distributor.id}-${row.periodKey.replace("-", "-")}`;
+                                        const { error } = await deleteMonthlyEntry(entryId, slug);
+                                        if (!error) setEntries((prev) => prev.filter((e) => `${e.periodYear}-${String(e.periodMonth).padStart(2,"0")}` !== row.periodKey));
+                                        setConfirmDeleteKey(null);
+                                        setDeleting(false);
+                                      }}
+                                      disabled={deleting}
+                                      className="text-xs font-medium text-red-600 hover:text-red-700 disabled:opacity-50 cursor-pointer"
+                                    >
+                                      {deleting ? "..." : "Sí"}
+                                    </button>
+                                    <button
+                                      onClick={() => setConfirmDeleteKey(null)}
+                                      className="text-xs font-medium text-gray-400 hover:text-gray-600 cursor-pointer"
+                                    >
+                                      No
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center gap-3">
+                                    <Link
+                                      href={`/dashboard/distribuidor/${slug}/cargar?period=${row.periodKey}`}
+                                      className="text-xs font-medium text-primary-600 hover:text-primary-700 cursor-pointer"
+                                    >
+                                      Editar
+                                    </Link>
+                                    <button
+                                      onClick={() => setConfirmDeleteKey(row.periodKey)}
+                                      className="text-xs font-medium text-gray-400 hover:text-red-500 transition-colors cursor-pointer"
+                                    >
+                                      Eliminar
+                                    </button>
+                                  </div>
+                                )}
                               </td>
                             </tr>
                           );
@@ -1000,7 +981,6 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
                   </table>
                 </div>}
 
-                {/* Pagination */}
                 {histOpen && <div className="flex items-center gap-3 text-sm text-gray-500">
                   <span className="whitespace-nowrap">Página {histSafePage} de {histTotalPages}</span>
                   <div className="flex-1 flex items-center justify-center gap-1">

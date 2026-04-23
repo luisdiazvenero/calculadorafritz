@@ -1,8 +1,10 @@
 "use client";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useState } from "react";
-import { regions, distributors } from "@/lib/mock-data";
+import { usePathname, useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
+import { getRegions, getDistributors, getCurrentUser } from "@/lib/db";
+import { createClient } from "@/lib/supabase/client";
+import type { Region, Distributor } from "@/lib/mock-data";
 
 const REGION_COLORS: Record<string, string> = {
   Capital:           "#3B82F6",
@@ -27,15 +29,39 @@ import { cn } from "@/utils/cn";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router   = useRouter();
   const [expandedRegions, setExpandedRegions] = useState<string[]>(["1"]);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
+  const [sidebarOpen, setSidebarOpen]         = useState(false);
+  const [collapsed, setCollapsed]             = useState(false);
+  const [regions, setRegions]                 = useState<Region[]>([]);
+  const [distributors, setDistributors]       = useState<Distributor[]>([]);
+  const [userEmail, setUserEmail]             = useState("");
+
+  useEffect(() => {
+    Promise.all([getRegions(), getDistributors(), getCurrentUser()]).then(
+      ([r, d, u]) => {
+        setRegions(r);
+        setDistributors(d);
+        if (u) setUserEmail(u.email);
+      }
+    );
+  }, []);
+
+  async function handleLogout() {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push("/");
+  }
 
   const toggleRegion = (regionId: string) => {
     setExpandedRegions((prev) =>
       prev.includes(regionId) ? prev.filter((r) => r !== regionId) : [...prev, regionId]
     );
   };
+
+  const initials = userEmail
+    ? userEmail.split("@")[0].slice(0, 2).toUpperCase()
+    : "…";
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
@@ -71,7 +97,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </div>
             )}
           </div>
-          {/* Toggle button */}
           <button
             onClick={() => setCollapsed((c) => !c)}
             title={collapsed ? "Expandir" : "Colapsar"}
@@ -86,7 +111,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto px-2 py-4 space-y-1">
-          {/* Overview */}
           <Link
             href="/dashboard"
             title={collapsed ? "Vista Global" : undefined}
@@ -102,7 +126,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             {!collapsed && "Vista Global"}
           </Link>
 
-          {/* Regions section */}
           {!collapsed && (
             <div className="pt-3 pb-1">
               <p className="px-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Regiones</p>
@@ -114,7 +137,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             const regionDistributors = distributors.filter(
               (d) => d.regionId === region.id && d.status !== "inactive"
             );
-            const isExpanded = expandedRegions.includes(region.id);
+            const isExpanded  = expandedRegions.includes(region.id);
             const regionColor = REGION_COLORS[region.name] ?? "#94A3B8";
             const isRegionActive = pathname === `/dashboard/region/${region.slug}`;
 
@@ -181,12 +204,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             );
           })}
 
-          {/* Divider */}
           <div className="pt-3 pb-1">
             <div className="border-t border-gray-100" />
           </div>
 
-          {/* Distributors management */}
           <Link
             href="/dashboard/distribuidores"
             title={collapsed ? "Distribuidores" : undefined}
@@ -202,10 +223,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             {!collapsed && "Distribuidores"}
           </Link>
 
-          {/* Calculadora */}
           {(() => {
             const distSlug = pathname.match(/\/dashboard\/distribuidor\/([^/]+)/)?.[1];
-            const href = distSlug ? `/dashboard/distribuidor/${distSlug}/calculadora` : "/dashboard/calculadora";
+            const href     = distSlug ? `/dashboard/distribuidor/${distSlug}/calculadora` : "/dashboard/calculadora";
             const isActive = pathname.endsWith("/calculadora");
             return (
               <Link
@@ -230,14 +250,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <>
               <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg">
                 <div className="w-7 h-7 bg-primary-600 rounded-full flex items-center justify-center">
-                  <span className="text-white text-xs font-medium">LD</span>
+                  <span className="text-white text-xs font-medium">{initials}</span>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium text-gray-900 truncate">Luis Díaz</p>
+                  <p className="text-xs font-medium text-gray-900 truncate">{userEmail || "Cargando…"}</p>
                   <p className="text-xs text-gray-400">Administrador</p>
                 </div>
               </div>
-              <button className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-gray-500 hover:bg-gray-50 hover:text-gray-900 transition">
+              <button
+                onClick={handleLogout}
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-gray-500 hover:bg-gray-50 hover:text-gray-900 transition cursor-pointer"
+              >
                 <RiLogoutBoxLine className="w-4 h-4" />
                 Cerrar sesión
               </button>
@@ -245,7 +268,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           )}
 
           {collapsed && (
-            <button title="Cerrar sesión" className="w-full flex items-center justify-center px-3 py-2 rounded-lg text-sm text-gray-400 hover:bg-gray-50 hover:text-gray-700 transition">
+            <button
+              title="Cerrar sesión"
+              onClick={handleLogout}
+              className="w-full flex items-center justify-center px-3 py-2 rounded-lg text-sm text-gray-400 hover:bg-gray-50 hover:text-gray-700 transition cursor-pointer"
+            >
               <RiLogoutBoxLine className="w-4 h-4" />
             </button>
           )}
@@ -254,7 +281,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       {/* Main content */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Mobile menu button */}
         <div className="lg:hidden px-4 py-3 border-b border-gray-100 bg-white">
           <button
             className="p-1 rounded-lg hover:bg-gray-100"
@@ -263,7 +289,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             {sidebarOpen ? <RiCloseLine className="w-5 h-5" /> : <RiMenuLine className="w-5 h-5" />}
           </button>
         </div>
-
         <main className="flex-1 overflow-y-auto">{children}</main>
       </div>
     </div>

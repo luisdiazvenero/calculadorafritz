@@ -1,8 +1,10 @@
 "use client";
-import { use, useState } from "react";
-import { usePathname } from "next/navigation";
+import { use, useState, useEffect } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { distributors, regions } from "@/lib/mock-data";
+import { getDistributorBySlug, getRegions } from "@/lib/db";
+import { createClient } from "@/lib/supabase/client";
+import type { Distributor, Region } from "@/lib/mock-data";
 import { cn } from "@/utils/cn";
 import {
   RiEarthLine,
@@ -11,6 +13,7 @@ import {
   RiMenuLine,
   RiArrowLeftSLine,
   RiArrowRightSLine,
+  RiLogoutBoxLine,
 } from "@remixicon/react";
 
 const REGION_COLORS: Record<string, string> = {
@@ -29,19 +32,33 @@ export default function DistribuidorLayout({
   children: React.ReactNode;
   params: Promise<{ slug: string }>;
 }) {
-  const { slug } = use(params);
-  const pathname = usePathname();
+  const { slug }    = use(params);
+  const pathname    = usePathname();
+  const router      = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed,  setCollapsed]  = useState(false);
+  const [distributor, setDistributor] = useState<Distributor | null>(null);
+  const [region,      setRegion]      = useState<Region | null>(null);
 
-  const distributor = distributors.find((d) => d.slug === slug);
-  const region = distributor ? regions.find((r) => r.id === distributor.regionId) : null;
+  useEffect(() => {
+    Promise.all([getDistributorBySlug(slug), getRegions()]).then(([d, regions]) => {
+      setDistributor(d);
+      if (d) setRegion(regions.find((r) => r.id === d.regionId) ?? null);
+    });
+  }, [slug]);
+
+  async function handleLogout() {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push("/");
+  }
+
   const regionColor = REGION_COLORS[region?.name ?? ""] ?? "#0466C8";
 
   const navItems = [
-    { label: "Visión Global",      href: `/distribuidor/${slug}`,             icon: RiEarthLine,       exact: true  },
-    { label: "Reportes Mensuales", href: `/distribuidor/${slug}/datos`,        icon: RiBarChartBoxLine, exact: false },
-    { label: "Calculadora",        href: `/distribuidor/${slug}/calculadora`,  icon: RiCalculatorLine,  exact: false },
+    { label: "Visión Global",      href: `/distribuidor/${slug}`,            icon: RiEarthLine,       exact: true  },
+    { label: "Reportes Mensuales", href: `/distribuidor/${slug}/datos`,       icon: RiBarChartBoxLine, exact: false },
+    { label: "Calculadora",        href: `/distribuidor/${slug}/calculadora`, icon: RiCalculatorLine,  exact: false },
   ];
 
   function SidebarContent({ isCollapsed }: { isCollapsed: boolean }) {
@@ -49,12 +66,11 @@ export default function DistribuidorLayout({
 
     return (
       <div className="flex flex-col h-full">
-        {/* Header — logo + toggle */}
+        {/* Header */}
         <div className={cn(
           "border-b border-gray-100 flex items-center",
           isCollapsed ? "flex-col gap-2 px-3 py-3" : "justify-between px-4 py-4"
         )}>
-          {/* Logo */}
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="w-8 h-8 rounded-lg bg-primary-600 flex items-center justify-center flex-shrink-0">
               <span className="text-white text-xs font-bold">F</span>
@@ -63,8 +79,6 @@ export default function DistribuidorLayout({
               <span className="text-sm font-semibold text-gray-700 truncate">Fritz Calculadora</span>
             )}
           </div>
-
-          {/* Toggle button */}
           <button
             onClick={() => setCollapsed((c) => !c)}
             title={isCollapsed ? "Expandir" : "Colapsar"}
@@ -118,11 +132,25 @@ export default function DistribuidorLayout({
         </nav>
 
         {/* Footer */}
-        {!isCollapsed && (
-          <div className="px-5 py-4 border-t border-gray-100">
-            <p className="text-[11px] text-gray-400">Portal del Distribuidor</p>
-          </div>
-        )}
+        <div className="px-2 py-3 border-t border-gray-100">
+          {!isCollapsed ? (
+            <button
+              onClick={handleLogout}
+              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-gray-500 hover:bg-gray-50 hover:text-gray-900 transition cursor-pointer"
+            >
+              <RiLogoutBoxLine className="w-4 h-4" />
+              Cerrar sesión
+            </button>
+          ) : (
+            <button
+              title="Cerrar sesión"
+              onClick={handleLogout}
+              className="w-full flex items-center justify-center px-3 py-2 rounded-lg text-sm text-gray-400 hover:bg-gray-50 hover:text-gray-700 transition cursor-pointer"
+            >
+              <RiLogoutBoxLine className="w-4 h-4" />
+            </button>
+          )}
+        </div>
       </div>
     );
   }
@@ -147,9 +175,8 @@ export default function DistribuidorLayout({
         </div>
       )}
 
-      {/* Main content area */}
+      {/* Main content */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Mobile topbar */}
         <div className="lg:hidden flex items-center gap-3 px-4 py-3 bg-white border-b border-gray-100 sticky top-0 z-10">
           <button onClick={() => setMobileOpen(true)} className="p-1.5 rounded-lg hover:bg-gray-100">
             <RiMenuLine className="w-5 h-5 text-gray-600" />
@@ -159,10 +186,7 @@ export default function DistribuidorLayout({
             <span className="text-sm font-semibold text-gray-900">{distributor?.name ?? slug}</span>
           </div>
         </div>
-
-        <main className="flex-1 overflow-y-auto">
-          {children}
-        </main>
+        <main className="flex-1 overflow-y-auto">{children}</main>
       </div>
     </div>
   );

@@ -1,8 +1,9 @@
 "use client";
-import { use, useState } from "react";
-import {
-  distributors, regions, monthlyEntries, calcular, formatPeriod, delta,
-} from "@/lib/mock-data";
+import { use, useState, useEffect } from "react";
+import { calcular, formatPeriod, delta } from "@/lib/mock-data";
+import type { Distributor, Region, MonthlyEntry } from "@/lib/mock-data";
+import { getDistributorBySlug, getRegions, getEntriesByDistributor } from "@/lib/db";
+import { ALL_PERIOD_KEYS, defaultPeriodKey, defaultPrevKey } from "@/lib/periods";
 import { cn } from "@/utils/cn";
 import Link from "next/link";
 import {
@@ -70,23 +71,14 @@ function GaugeChart({ progress }: { progress: number }) {
 
 export default function DistribuidorVistaGlobal({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
-  const distributor = distributors.find((d) => d.slug === slug);
-  const region = distributor ? regions.find((r) => r.id === distributor.regionId) : null;
-  const regionColor = REGION_COLORS[region?.name ?? ""] ?? "#0466C8";
 
-  const allDistEntries = distributor
-    ? monthlyEntries
-        .filter((m) => m.distributorId === distributor.id)
-        .sort((a, b) => a.periodYear * 100 + a.periodMonth - (b.periodYear * 100 + b.periodMonth))
-    : [];
-  const availableKeys = allDistEntries.map(
-    (e) => `${e.periodYear}-${String(e.periodMonth).padStart(2, "0")}`
-  );
-  const defaultLatest = availableKeys[availableKeys.length - 1] ?? "2026-02";
-  const defaultPrev   = availableKeys[availableKeys.length - 2] ?? "2026-01";
+  const [distributor, setDistributor] = useState<Distributor | null>(null);
+  const [region, setRegion] = useState<Region | null>(null);
+  const [entries, setEntries] = useState<MonthlyEntry[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const [latestKey, setLatestKey] = useState(defaultLatest);
-  const [prevKey,   setPrevKey]   = useState(defaultPrev);
+  const [latestKey, setLatestKey] = useState(defaultPeriodKey());
+  const [prevKey,   setPrevKey]   = useState(defaultPrevKey());
 
   const [skuSearch,     setSkuSearch]     = useState("");
   const [skuCatFilter,  setSkuCatFilter]  = useState("all");
@@ -98,6 +90,21 @@ export default function DistribuidorVistaGlobal({ params }: { params: Promise<{ 
   const [skuPageSize,   setSkuPageSize]   = useState(12);
   const [skuOpen,       setSkuOpen]       = useState(true);
 
+  useEffect(() => {
+    Promise.all([getDistributorBySlug(slug), getRegions()]).then(([d, regions]) => {
+      setDistributor(d);
+      if (d) {
+        setRegion(regions.find((r) => r.id === d.regionId) ?? null);
+        getEntriesByDistributor(d.id).then((e) => {
+          setEntries(e);
+          setLoading(false);
+        });
+      } else {
+        setLoading(false);
+      }
+    });
+  }, [slug]);
+
   const parsePeriod = (key: string) => {
     const [y, m] = key.split("-").map(Number);
     return { year: y, month: m };
@@ -105,22 +112,37 @@ export default function DistribuidorVistaGlobal({ params }: { params: Promise<{ 
   const selectedPeriod = parsePeriod(latestKey);
   const prevPeriodSel  = parsePeriod(prevKey);
 
+  if (loading) {
+    return (
+      <div className="p-6 space-y-6">
+        <div className="h-8 w-64 bg-gray-100 rounded-lg animate-pulse" />
+        <div className="grid grid-cols-4 gap-3">
+          {[1,2,3,4].map((i) => <div key={i} className="h-48 bg-gray-100 rounded-2xl animate-pulse" />)}
+        </div>
+        <div className="h-80 bg-gray-100 rounded-2xl animate-pulse" />
+      </div>
+    );
+  }
+
   if (!distributor) {
     return (
       <div className="p-6 text-center text-gray-500">Distribuidor no encontrado.</div>
     );
   }
 
-  const entry = monthlyEntries.find(
-    (m) => m.distributorId === distributor.id &&
-           m.periodYear === selectedPeriod.year &&
-           m.periodMonth === selectedPeriod.month
+  const regionColor = REGION_COLORS[region?.name ?? ""] ?? "#0466C8";
+
+  // entries come newest-first from DB; sort ascending for chart
+  const allDistEntries = [...entries].sort(
+    (a, b) => a.periodYear * 100 + a.periodMonth - (b.periodYear * 100 + b.periodMonth)
   );
-  const prevEntry = monthlyEntries.find(
-    (m) => m.distributorId === distributor.id &&
-           m.periodYear === prevPeriodSel.year &&
-           m.periodMonth === prevPeriodSel.month
-  );
+
+  const entry = entries.find(
+    (m) => m.periodYear === selectedPeriod.year && m.periodMonth === selectedPeriod.month
+  ) ?? null;
+  const prevEntry = entries.find(
+    (m) => m.periodYear === prevPeriodSel.year && m.periodMonth === prevPeriodSel.month
+  ) ?? null;
 
   const calc     = entry     ? calcular(entry)     : null;
   const prevCalc = prevEntry ? calcular(prevEntry) : null;
@@ -146,7 +168,7 @@ export default function DistribuidorVistaGlobal({ params }: { params: Promise<{ 
             onChange={(e) => setLatestKey(e.target.value)}
             className="text-sm font-medium text-gray-700 bg-transparent focus:outline-none cursor-pointer"
           >
-            {availableKeys.map((k) => {
+            {ALL_PERIOD_KEYS.slice().reverse().map((k) => {
               const { year, month } = parsePeriod(k);
               return <option key={k} value={k}>{formatPeriod(year, month)}</option>;
             })}
@@ -160,7 +182,7 @@ export default function DistribuidorVistaGlobal({ params }: { params: Promise<{ 
             onChange={(e) => setPrevKey(e.target.value)}
             className="text-sm font-medium text-gray-700 bg-transparent focus:outline-none cursor-pointer"
           >
-            {availableKeys.map((k) => {
+            {ALL_PERIOD_KEYS.slice().reverse().map((k) => {
               const { year, month } = parsePeriod(k);
               return <option key={k} value={k}>{formatPeriod(year, month)}</option>;
             })}
@@ -180,7 +202,6 @@ export default function DistribuidorVistaGlobal({ params }: { params: Promise<{ 
 
       {/* Header fila 2: identidad + cartera */}
       <div className="flex items-center gap-5">
-        {/* Avatar */}
         <div
           className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 text-lg font-bold"
           style={{ backgroundColor: `${regionColor}20`, color: regionColor }}
@@ -188,7 +209,6 @@ export default function DistribuidorVistaGlobal({ params }: { params: Promise<{ 
           {distributor.name.charAt(0)}
         </div>
 
-        {/* Nombre + email */}
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-bold text-gray-900 leading-none">{distributor.name}</h1>
@@ -204,7 +224,6 @@ export default function DistribuidorVistaGlobal({ params }: { params: Promise<{ 
           <p className="text-sm text-gray-400 mt-0.5">{distributor.email}</p>
         </div>
 
-        {/* Divisor + Cartera */}
         {entry && (
           <>
             <div className="w-px self-stretch mx-1" style={{ backgroundColor: regionColor, opacity: 0.3 }} />
@@ -224,27 +243,22 @@ export default function DistribuidorVistaGlobal({ params }: { params: Promise<{ 
           {/* Métricas — Gauges + Hbars */}
           {(() => {
             const fmtNum = (v: number) => Math.round(v).toLocaleString();
-            const fmtCur = (v: number) =>
-              v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(1)}M`
-              : v >= 1_000   ? `$${(v / 1_000).toFixed(1)}k`
-              : `$${Math.round(v).toLocaleString()}`;
 
             const gaugeCards = [
-              { label: "Activados",         base: calc.activadosBase, meta: calc.activadosMeta, variacion: `${(entry.pctActivacion * 100).toFixed(0)}%`,        fmt: "number"   as const },
-              { label: "Clientes con Fritz", base: calc.fritzeBase,   meta: calc.fritzMeta,     variacion: `${(entry.pctClientesFritz * 100).toFixed(0)}%`,     fmt: "number"   as const },
-              { label: "Número de SKUs",     base: calc.skusBase,     meta: calc.skusMeta,      variacion: `${(entry.pctIncrementoSkus * 100).toFixed(0)}%`,    fmt: "number"   as const },
-              { label: "Cajas Sell Out",     base: calc.cajasBase,    meta: calc.cajasMeta,     variacion: `${(entry.pctIncrementoSellOut * 100).toFixed(0)}%`, fmt: "number"   as const },
+              { label: "Activados",         base: calc.activadosBase, meta: calc.activadosMeta, variacion: `${(entry.pctActivacion * 100).toFixed(0)}%`        },
+              { label: "Clientes con Fritz", base: calc.fritzeBase,   meta: calc.fritzMeta,     variacion: `${(entry.pctClientesFritz * 100).toFixed(0)}%`     },
+              { label: "Número de SKUs",     base: calc.skusBase,     meta: calc.skusMeta,      variacion: `${(entry.pctIncrementoSkus * 100).toFixed(0)}%`    },
+              { label: "Cajas Sell Out",     base: calc.cajasBase,    meta: calc.cajasMeta,     variacion: `${(entry.pctIncrementoSellOut * 100).toFixed(0)}%` },
             ];
 
             const hbarCards = [
-              { label: "Clientes Prom x Vendedor", base: calc.clientesPorVendedor, meta: calc.clientesPorVendedor * 1.1, fmt: "number"   as const },
-              { label: "Cajas Prom x Cliente",     base: calc.cajasPorCliente,     meta: calc.cajasPorCliente * 1.1,     fmt: "number"   as const },
-              { label: "# de Vendedores",          base: entry.numVendedores,      meta: Math.round(entry.numVendedores * (1 + entry.pctIncrementoVendedores)), fmt: "number" as const },
+              { label: "Clientes Prom x Vendedor", base: calc.clientesPorVendedor, meta: calc.clientesPorVendedor * 1.1 },
+              { label: "Cajas Prom x Cliente",     base: calc.cajasPorCliente,     meta: calc.cajasPorCliente * 1.1     },
+              { label: "# de Vendedores",          base: entry.numVendedores,      meta: Math.round(entry.numVendedores * (1 + entry.pctIncrementoVendedores)) },
             ];
 
             return (
               <div className="space-y-3">
-                {/* Fila 1 — Gauges */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                   {gaugeCards.map((card) => {
                     const fmtBase = fmtNum(card.base);
@@ -275,7 +289,6 @@ export default function DistribuidorVistaGlobal({ params }: { params: Promise<{ 
                   })}
                 </div>
 
-                {/* Fila 2 — Horizontal bars */}
                 <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
                   {hbarCards.map((card) => {
                     const fmtBase = fmtNum(card.base);
@@ -317,7 +330,6 @@ export default function DistribuidorVistaGlobal({ params }: { params: Promise<{ 
           {/* Evolución + SKUs donut */}
           {chartData.length > 1 && (
             <div className="grid grid-cols-3 gap-3 items-stretch">
-              {/* Evolución — 2/3 */}
               <div className="col-span-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-6 min-w-0">
                 <h2 className="text-base font-semibold text-gray-900 mb-1">Evolución de Cartera y Activaciones</h2>
                 <div className="flex items-center gap-4 mt-1 mb-4">
@@ -359,8 +371,7 @@ export default function DistribuidorVistaGlobal({ params }: { params: Promise<{ 
                 </ResponsiveContainer>
               </div>
 
-              {/* SKUs por Categoría — 1/3 */}
-              {entry && (() => {
+              {(() => {
                 const SKU_CATS = [
                   { name: "Salsas y aderezos", weight: 22 },
                   { name: "BBQ",               weight: 13 },
@@ -404,7 +415,6 @@ export default function DistribuidorVistaGlobal({ params }: { params: Promise<{ 
                         </PieChart>
                       </ResponsiveContainer>
                     </div>
-                    {/* Inline legend */}
                     <div className="flex flex-wrap gap-x-3 gap-y-1.5 mt-2">
                       {pieData.map((d, i) => (
                         <div key={d.name} className="flex items-center gap-1">

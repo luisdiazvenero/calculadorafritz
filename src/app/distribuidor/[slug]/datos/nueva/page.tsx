@@ -1,6 +1,10 @@
 "use client";
-import { use, useState } from "react";
-import { distributors, monthlyEntries, calcular, formatPeriod } from "@/lib/mock-data";
+import { use, useState, useEffect } from "react";
+import { calcular, formatPeriod } from "@/lib/mock-data";
+import type { Distributor, MonthlyEntry } from "@/lib/mock-data";
+import { getDistributorBySlug, getEntry } from "@/lib/db";
+import { upsertMonthlyEntry } from "@/lib/actions";
+import { ALL_PERIOD_KEYS, defaultPeriodKey } from "@/lib/periods";
 import { cn } from "@/utils/cn";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -19,74 +23,86 @@ type FormState = {
   cajasPromedio: number;
   numVendedores: number;
   margenGanancia: number;
-  periodYear: number;
-  periodMonth: number;
 };
 
-const PERIODS = [
-  { year: 2026, month: 3 },
-  { year: 2026, month: 2 },
-  { year: 2026, month: 1 },
-  { year: 2025, month: 12 },
-  { year: 2025, month: 11 },
-  { year: 2025, month: 10 },
-];
+const EMPTY_FORM: FormState = {
+  totalCartera: 0,
+  pctActivacion: 0,
+  pctClientesFritz: 0,
+  totalSkusFritz: 0,
+  cajasPromedio: 0,
+  numVendedores: 0,
+  margenGanancia: 0,
+};
 
 export default function NuevaEntradaPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
   const router = useRouter();
-  const distributor = distributors.find((d) => d.slug === slug);
 
-  const LATEST = { year: 2026, month: 2 };
-  const existing = distributor
-    ? monthlyEntries.find(
-        (m) => m.distributorId === distributor.id &&
-               m.periodYear === LATEST.year &&
-               m.periodMonth === LATEST.month
-      )
-    : null;
-
-  const [form, setForm] = useState<FormState>({
-    totalCartera:     existing?.totalCartera     ?? 0,
-    pctActivacion:    existing?.pctActivacion    ?? 0,
-    pctClientesFritz: existing?.pctClientesFritz ?? 0,
-    totalSkusFritz:   existing?.totalSkusFritz   ?? 0,
-    cajasPromedio:    existing?.cajasPromedio     ?? 0,
-    numVendedores:    existing?.numVendedores     ?? 0,
-    margenGanancia:   existing?.margenGanancia    ?? 0,
-    periodYear:  LATEST.year,
-    periodMonth: LATEST.month,
-  });
-
+  const [distributor, setDistributor] = useState<Distributor | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [periodKey, setPeriodKey] = useState(defaultPeriodKey());
+  const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  if (!distributor) {
-    return <div className="p-6 text-gray-500">Distribuidor no encontrado.</div>;
-  }
+  useEffect(() => {
+    getDistributorBySlug(slug).then((d) => {
+      setDistributor(d);
+      setLoading(false);
+    });
+  }, [slug]);
 
-  const baseEntry = existing ?? {
-    id: "preview",
-    distributorId: distributor.id,
-    periodYear: form.periodYear,
-    periodMonth: form.periodMonth,
-    pctIncrementoActivos: 0.1,
-    pctIncrementoFritz: 0.1,
-    pctIncrementoSkus: 0.1,
-    pctIncrementoSellOut: 0.1,
-    pctIncrementoVendedores: 0.05,
-    rebate: 0.01,
-    comentarios: "",
-  };
-
-  const previewEntry = { ...baseEntry, ...form };
-  const preview = calcular(previewEntry as Parameters<typeof calcular>[0]);
+  useEffect(() => {
+    if (!distributor) return;
+    const [y, m] = periodKey.split("-").map(Number);
+    getEntry(distributor.id, y, m).then((entry) => {
+      if (entry) {
+        setForm({
+          totalCartera:     entry.totalCartera,
+          pctActivacion:    entry.pctActivacion,
+          pctClientesFritz: entry.pctClientesFritz,
+          totalSkusFritz:   entry.totalSkusFritz,
+          cajasPromedio:    entry.cajasPromedio,
+          numVendedores:    entry.numVendedores,
+          margenGanancia:   entry.margenGanancia,
+        });
+      } else {
+        setForm(EMPTY_FORM);
+      }
+    });
+  }, [distributor, periodKey]);
 
   const handleChange = (key: string, value: string, type: string) => {
     const parsed = type === "percent" ? parseFloat(value) / 100 : parseFloat(value);
     setForm((prev) => ({ ...prev, [key]: isNaN(parsed) ? 0 : parsed }));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (!distributor || saving) return;
+    const [periodYear, periodMonth] = periodKey.split("-").map(Number);
+    setSaving(true);
+    const { error } = await upsertMonthlyEntry({
+      id: `${distributor.id}-${periodYear}-${periodMonth}`,
+      distributorId: distributor.id,
+      periodYear,
+      periodMonth,
+      totalCartera:            form.totalCartera,
+      pctActivacion:           form.pctActivacion,
+      pctClientesFritz:        form.pctClientesFritz,
+      pctIncrementoActivos:    0.1,
+      pctIncrementoFritz:      0.1,
+      totalSkusFritz:          form.totalSkusFritz,
+      pctIncrementoSkus:       0.1,
+      cajasPromedio:           form.cajasPromedio,
+      pctIncrementoSellOut:    0.1,
+      numVendedores:           form.numVendedores,
+      pctIncrementoVendedores: 0.05,
+      margenGanancia:          form.margenGanancia,
+      rebate:                  0.01,
+      comentarios:             "",
+    });
+    if (error) { console.error(error); setSaving(false); return; }
     setSaved(true);
     setTimeout(() => router.push(`/distribuidor/${slug}/datos`), 1500);
   };
@@ -128,7 +144,6 @@ export default function NuevaEntradaPage({ params }: { params: Promise<{ slug: s
     );
   }
 
-  // Cell color palette
   const C = {
     yellow:  { bg: "#FEF9C3", text: "#713F12" },
     blue:    { bg: "#DBEAFE", text: "#1E3A8A" },
@@ -139,10 +154,29 @@ export default function NuevaEntradaPage({ params }: { params: Promise<{ slug: s
   } as const;
   type CellColor = keyof typeof C;
 
-  const vendMeta = Math.round(form.numVendedores * (1 + 0.05));
-  const cli_vend_meta = vendMeta > 0 ? (preview.activadosMeta / vendMeta).toFixed(1) : "—";
-  const caj_cli_meta  = preview.activadosMeta > 0 ? (preview.cajasMeta / preview.activadosMeta).toFixed(1) : "—";
-  const caj_vend_meta = vendMeta > 0 ? Math.round(preview.cajasMeta / vendMeta).toLocaleString() : "—";
+  const [periodYear, periodMonth] = periodKey.split("-").map(Number);
+
+  const previewEntry = distributor ? {
+    id: "preview",
+    distributorId: distributor.id,
+    periodYear,
+    periodMonth,
+    pctIncrementoActivos:    0.1,
+    pctIncrementoFritz:      0.1,
+    pctIncrementoSkus:       0.1,
+    pctIncrementoSellOut:    0.1,
+    pctIncrementoVendedores: 0.05,
+    rebate:                  0.01,
+    comentarios:             "",
+    ...form,
+  } : null;
+
+  const preview = previewEntry ? calcular(previewEntry as Parameters<typeof calcular>[0]) : null;
+
+  const vendMeta = preview ? Math.round(form.numVendedores * 1.05) : 0;
+  const cli_vend_meta = preview && vendMeta > 0 ? (preview.activadosMeta / vendMeta).toFixed(1) : "—";
+  const caj_cli_meta  = preview && preview.activadosMeta > 0 ? (preview.cajasMeta / preview.activadosMeta).toFixed(1) : "—";
+  const caj_vend_meta = preview && vendMeta > 0 ? Math.round(preview.cajasMeta / vendMeta).toLocaleString() : "—";
   const fmtPct = (v: number) => v > 0 ? `${(v * 100).toFixed(0)}%` : "—";
 
   type Row = {
@@ -153,7 +187,7 @@ export default function NuevaEntradaPage({ params }: { params: Promise<{ slug: s
     rowBg?: string;
   };
 
-  const tableRows: Row[] = [
+  const tableRows: Row[] = preview ? [
     { label: "Total Cartera",         base: form.totalCartera.toLocaleString(),                  baseBg: "yellow", variacion: "—",                           meta: "—"                                                           },
     { label: "Activados",             base: Math.round(preview.activadosBase).toLocaleString(),   baseBg: "blue",   variacion: fmtPct(form.pctActivacion),    varBg: "yellow", meta: Math.round(preview.activadosMeta).toLocaleString(), metaBg: "orange" },
     { label: "Clientes con Fritz",    base: Math.round(preview.fritzeBase).toLocaleString(),      baseBg: "red",    variacion: fmtPct(form.pctClientesFritz), varBg: "blue",   meta: Math.round(preview.fritzMeta).toLocaleString(),     metaBg: "red"    },
@@ -165,7 +199,20 @@ export default function NuevaEntradaPage({ params }: { params: Promise<{ slug: s
     { label: "Cajas Prom × Vendedor", base: preview.cajasPorVendedor.toFixed(0),                  baseBg: "green",  variacion: "—",                           meta: caj_vend_meta,                                               metaBg: "green"  },
     { label: "Rentabilidad aprox.",   base: "—",                                                  variacion: "—",   meta: fmtCur(preview.rentabilidad), rowBg: "#DCFCE7", metaBg: "green" },
     { label: "Rebate final período",  base: "—",                                                  variacion: "—",   meta: fmtCur(preview.rebateTotal),  rowBg: "#DCFCE7", metaBg: "green" },
-  ];
+  ] : [];
+
+  if (loading) {
+    return (
+      <div className="p-8 space-y-8">
+        <div className="h-8 w-64 bg-gray-100 rounded-lg animate-pulse" />
+        <div className="h-96 bg-gray-100 rounded-2xl animate-pulse" />
+      </div>
+    );
+  }
+
+  if (!distributor) {
+    return <div className="p-6 text-gray-500">Distribuidor no encontrado.</div>;
+  }
 
   return (
     <div className="p-8 space-y-8">
@@ -200,19 +247,17 @@ export default function NuevaEntradaPage({ params }: { params: Promise<{ slug: s
                     <RiCalendarLine className="w-4 h-4 text-primary-500" />
                   </span>
                   <select
-                    value={`${form.periodYear}-${form.periodMonth}`}
-                    onChange={(e) => {
-                      const [y, m] = e.target.value.split("-").map(Number);
-                      setForm((prev) => ({ ...prev, periodYear: y, periodMonth: m }));
-                    }}
+                    value={periodKey}
+                    onChange={(e) => setPeriodKey(e.target.value)}
                     style={{ appearance: "none" }}
                     className="w-full pl-10 pr-9 py-3 border border-gray-200 rounded-xl text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent cursor-pointer transition-all"
                   >
-                    {PERIODS.map((p) => (
-                      <option key={`${p.year}-${p.month}`} value={`${p.year}-${p.month}`}>
-                        {formatPeriod(p.year, p.month)}
-                      </option>
-                    ))}
+                    {ALL_PERIOD_KEYS.slice().reverse().map((k) => {
+                      const [y, m] = k.split("-").map(Number);
+                      return (
+                        <option key={k} value={k}>{formatPeriod(y, m)}</option>
+                      );
+                    })}
                   </select>
                   <RiArrowDownSLine className="w-4 h-4 text-gray-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 </div>
@@ -248,7 +293,7 @@ export default function NuevaEntradaPage({ params }: { params: Promise<{ slug: s
 
             <button
               onClick={handleSave}
-              disabled={saved}
+              disabled={saved || saving}
               className={cn(
                 "mt-8 w-full flex items-center justify-center gap-2 py-3.5 px-4 rounded-xl text-sm font-semibold transition-all",
                 saved
@@ -259,7 +304,7 @@ export default function NuevaEntradaPage({ params }: { params: Promise<{ slug: s
               {saved ? (
                 <><RiCheckLine className="w-4 h-4" /> ¡Guardado! Redirigiendo...</>
               ) : (
-                <><RiSaveLine className="w-4 h-4" /> Guardar Reporte</>
+                <><RiSaveLine className="w-4 h-4" /> {saving ? "Guardando..." : "Guardar Reporte"}</>
               )}
             </button>
           </div>

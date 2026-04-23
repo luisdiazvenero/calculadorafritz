@@ -1,6 +1,8 @@
 "use client";
-import { use, useState } from "react";
-import { distributors, monthlyEntries, calcular } from "@/lib/mock-data";
+import { use, useState, useEffect } from "react";
+import { getDistributorBySlug, getLatestEntry } from "@/lib/db";
+import { calcular } from "@/lib/mock-data";
+import type { Distributor } from "@/lib/mock-data";
 import { cn } from "@/utils/cn";
 import {
   RiUserLine,
@@ -21,57 +23,64 @@ type FormState = {
   margenGanancia: number;
 };
 
+const DEFAULT_FORM: FormState = {
+  totalCartera: 500,
+  pctActivacion: 0.6,
+  pctClientesFritz: 0.5,
+  totalSkusFritz: 20,
+  cajasPromedio: 5000,
+  numVendedores: 5,
+  margenGanancia: 0.15,
+};
+
 export default function CalculadoraPortalPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
-  const distributor = distributors.find((d) => d.slug === slug);
+  const [distributor, setDistributor] = useState<Distributor | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [form, setForm] = useState<FormState>(DEFAULT_FORM);
 
-  const allEntries = distributor
-    ? monthlyEntries
-        .filter((m) => m.distributorId === distributor.id)
-        .sort((a, b) => a.periodYear * 100 + a.periodMonth - (b.periodYear * 100 + b.periodMonth))
-    : [];
-  const existing = allEntries[allEntries.length - 1] ?? null;
+  useEffect(() => {
+    getDistributorBySlug(slug).then((d) => {
+      setDistributor(d);
+      if (!d) { setLoading(false); return; }
+      getLatestEntry(d.id).then((entry) => {
+        if (entry) {
+          setForm({
+            totalCartera:     entry.totalCartera,
+            pctActivacion:    entry.pctActivacion,
+            pctClientesFritz: entry.pctClientesFritz,
+            totalSkusFritz:   entry.totalSkusFritz,
+            cajasPromedio:    entry.cajasPromedio,
+            numVendedores:    entry.numVendedores,
+            margenGanancia:   entry.margenGanancia,
+          });
+        }
+        setLoading(false);
+      });
+    });
+  }, [slug]);
 
-  const [form, setForm] = useState<FormState>({
-    totalCartera:     existing?.totalCartera     ?? 500,
-    pctActivacion:    existing?.pctActivacion    ?? 0.6,
-    pctClientesFritz: existing?.pctClientesFritz ?? 0.5,
-    totalSkusFritz:   existing?.totalSkusFritz   ?? 20,
-    cajasPromedio:    existing?.cajasPromedio     ?? 5000,
-    numVendedores:    existing?.numVendedores     ?? 5,
-    margenGanancia:   existing?.margenGanancia    ?? 0.15,
-  });
-
-  if (!distributor) {
-    return <div className="p-6 text-gray-500">Distribuidor no encontrado.</div>;
-  }
-
-  const previewEntry = {
+  const previewEntry = distributor ? {
     id: "calc",
     distributorId: distributor.id,
-    periodYear: existing?.periodYear ?? 2026,
-    periodMonth: existing?.periodMonth ?? 1,
+    periodYear: 2026,
+    periodMonth: 3,
     pctIncrementoActivos: 0.1,
     pctIncrementoFritz: 0.1,
     pctIncrementoSkus: 0.1,
     pctIncrementoSellOut: 0.1,
     pctIncrementoVendedores: 0.05,
-    rebate: existing?.rebate ?? 0.01,
+    rebate: 0.01,
     comentarios: "",
     ...form,
-  };
+  } : null;
 
-  const preview = calcular(previewEntry as Parameters<typeof calcular>[0]);
+  const preview = previewEntry ? calcular(previewEntry as Parameters<typeof calcular>[0]) : null;
 
   const handleChange = (key: keyof FormState, value: string, type: "number" | "percent") => {
     const parsed = type === "percent" ? parseFloat(value) / 100 : parseFloat(value);
     setForm((prev) => ({ ...prev, [key]: isNaN(parsed) ? 0 : parsed }));
   };
-
-  const fmtCur = (v: number) =>
-    v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(1)}M`
-    : v >= 1_000   ? `$${(v / 1_000).toFixed(1)}k`
-    : `$${Math.round(v).toLocaleString()}`;
 
   function Field({
     label, description, fieldKey, type, icon: Icon, colSpan = 1,
@@ -103,6 +112,19 @@ export default function CalculadoraPortalPage({ params }: { params: Promise<{ sl
         </div>
       </div>
     );
+  }
+
+  if (loading) {
+    return (
+      <div className="p-8 space-y-8">
+        <div className="h-8 w-64 bg-gray-100 rounded-lg animate-pulse" />
+        <div className="h-96 bg-gray-100 rounded-2xl animate-pulse" />
+      </div>
+    );
+  }
+
+  if (!distributor || !preview) {
+    return <div className="p-8 text-gray-500">Distribuidor no encontrado.</div>;
   }
 
   const vendMeta = Math.round(form.numVendedores * 1.05);

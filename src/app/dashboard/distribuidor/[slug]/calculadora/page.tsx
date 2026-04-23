@@ -1,6 +1,8 @@
 "use client";
-import { use, useState } from "react";
-import { distributors, monthlyEntries, calcular } from "@/lib/mock-data";
+import { use, useState, useEffect } from "react";
+import { getDistributorBySlug, getLatestEntry } from "@/lib/db";
+import { calcular } from "@/lib/mock-data";
+import type { Distributor } from "@/lib/mock-data";
 import { cn } from "@/utils/cn";
 import Link from "next/link";
 import {
@@ -23,39 +25,48 @@ type FormState = {
   margenGanancia: number;
 };
 
+const DEFAULT_FORM: FormState = {
+  totalCartera: 500,
+  pctActivacion: 0.6,
+  pctClientesFritz: 0.5,
+  totalSkusFritz: 20,
+  cajasPromedio: 5000,
+  numVendedores: 5,
+  margenGanancia: 0.15,
+};
+
 export default function CalculadoraPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
-  const distributor = distributors.find((d) => d.slug === slug);
+  const [distributor, setDistributor] = useState<Distributor | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [form, setForm] = useState<FormState>(DEFAULT_FORM);
 
-  const LATEST = { year: 2026, month: 2 };
-  const existing = distributor
-    ? monthlyEntries.find(
-        (m) =>
-          m.distributorId === distributor.id &&
-          m.periodYear === LATEST.year &&
-          m.periodMonth === LATEST.month
-      )
-    : null;
+  useEffect(() => {
+    getDistributorBySlug(slug).then((d) => {
+      setDistributor(d);
+      if (!d) { setLoading(false); return; }
+      getLatestEntry(d.id).then((entry) => {
+        if (entry) {
+          setForm({
+            totalCartera:     entry.totalCartera,
+            pctActivacion:    entry.pctActivacion,
+            pctClientesFritz: entry.pctClientesFritz,
+            totalSkusFritz:   entry.totalSkusFritz,
+            cajasPromedio:    entry.cajasPromedio,
+            numVendedores:    entry.numVendedores,
+            margenGanancia:   entry.margenGanancia,
+          });
+        }
+        setLoading(false);
+      });
+    });
+  }, [slug]);
 
-  const [form, setForm] = useState<FormState>({
-    totalCartera:     existing?.totalCartera     ?? 500,
-    pctActivacion:    existing?.pctActivacion    ?? 0.6,
-    pctClientesFritz: existing?.pctClientesFritz ?? 0.5,
-    totalSkusFritz:   existing?.totalSkusFritz   ?? 20,
-    cajasPromedio:    existing?.cajasPromedio     ?? 5000,
-    numVendedores:    existing?.numVendedores     ?? 5,
-    margenGanancia:   existing?.margenGanancia    ?? 0.15,
-  });
-
-  if (!distributor) {
-    return <div className="p-6 text-gray-500">Distribuidor no encontrado.</div>;
-  }
-
-  const previewEntry = {
+  const previewEntry = distributor ? {
     id: "calc",
     distributorId: distributor.id,
-    periodYear: LATEST.year,
-    periodMonth: LATEST.month,
+    periodYear: 2026,
+    periodMonth: 3,
     pctIncrementoActivos: 0.1,
     pctIncrementoFritz: 0.1,
     pctIncrementoSkus: 0.1,
@@ -64,9 +75,9 @@ export default function CalculadoraPage({ params }: { params: Promise<{ slug: st
     rebate: 0.01,
     comentarios: "",
     ...form,
-  };
+  } : null;
 
-  const preview = calcular(previewEntry as Parameters<typeof calcular>[0]);
+  const preview = previewEntry ? calcular(previewEntry as Parameters<typeof calcular>[0]) : null;
 
   const handleChange = (key: keyof FormState, value: string, type: "number" | "percent") => {
     const parsed = type === "percent" ? parseFloat(value) / 100 : parseFloat(value);
@@ -79,16 +90,9 @@ export default function CalculadoraPage({ params }: { params: Promise<{ slug: st
     : `$${Math.round(v).toLocaleString()}`;
 
   function Field({
-    label,
-    description,
-    fieldKey,
-    type,
-    icon: Icon,
-    colSpan = 1,
+    label, description, fieldKey, type, icon: Icon, colSpan = 1,
   }: {
-    label: string;
-    description: string;
-    fieldKey: keyof FormState;
+    label: string; description: string; fieldKey: keyof FormState;
     type: "number" | "percent";
     icon?: React.ComponentType<{ className?: string }>;
     colSpan?: 1 | 2;
@@ -118,14 +122,25 @@ export default function CalculadoraPage({ params }: { params: Promise<{ slug: st
     );
   }
 
+  if (loading) {
+    return (
+      <div className="p-8 space-y-8">
+        <div className="h-8 w-64 bg-gray-100 rounded-lg animate-pulse" />
+        <div className="h-96 bg-gray-100 rounded-2xl animate-pulse" />
+      </div>
+    );
+  }
+
+  if (!distributor || !preview) {
+    return <div className="p-8 text-gray-500">Distribuidor no encontrado.</div>;
+  }
+
   const vendMeta = Math.round(form.numVendedores * 1.05);
   const cli_vend_meta = vendMeta > 0 ? (preview.activadosMeta / vendMeta).toFixed(1) : "—";
   const caj_cli_meta  = preview.activadosMeta > 0 ? (preview.cajasMeta / preview.activadosMeta).toFixed(1) : "—";
   const caj_vend_meta = vendMeta > 0 ? Math.round(preview.cajasMeta / vendMeta).toLocaleString() : "—";
-
   const fmtPct = (v: number) => (v > 0 ? `${(v * 100).toFixed(0)}%` : "—");
 
-  // Cell color tokens
   const C = {
     yellow:  { bg: "#FEF9C3", text: "#713F12" },
     blue:    { bg: "#DBEAFE", text: "#1E3A8A" },
@@ -184,46 +199,32 @@ export default function CalculadoraPage({ params }: { params: Promise<{ slug: st
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
           <div className="px-8 py-6">
             <div className="grid grid-cols-2 gap-x-6 gap-y-6">
-              <Field
-                fieldKey="totalCartera" type="number" colSpan={2}
+              <Field fieldKey="totalCartera" type="number" colSpan={2}
                 label="Total cartera"
                 description="Número total de clientes en la cartera"
-                icon={RiUserLine}
-              />
-              <Field
-                fieldKey="pctActivacion" type="percent"
+                icon={RiUserLine} />
+              <Field fieldKey="pctActivacion" type="percent"
                 label="% Activación"
-                description="Clientes activos actualmente"
-              />
-              <Field
-                fieldKey="pctClientesFritz" type="percent"
+                description="Clientes activos actualmente" />
+              <Field fieldKey="pctClientesFritz" type="percent"
                 label="% Clientes con Fritz"
-                description="Clientes activos que tienen Fritz"
-              />
-              <Field
-                fieldKey="totalSkusFritz" type="number"
+                description="Clientes activos que tienen Fritz" />
+              <Field fieldKey="totalSkusFritz" type="number"
                 label="SKUs Fritz en portafolio"
                 description="SKUs de Fritz en el portafolio"
-                icon={RiBox3Line}
-              />
-              <Field
-                fieldKey="cajasPromedio" type="number"
+                icon={RiBox3Line} />
+              <Field fieldKey="cajasPromedio" type="number"
                 label="Cajas promedio (Sell Out)"
                 description="Cajas vendidas por período"
-                icon={RiShoppingBagLine}
-              />
-              <Field
-                fieldKey="numVendedores" type="number"
+                icon={RiShoppingBagLine} />
+              <Field fieldKey="numVendedores" type="number"
                 label="# de Vendedores"
                 description="Vendedores en el equipo"
-                icon={RiTeamLine}
-              />
-              <Field
-                fieldKey="margenGanancia" type="percent"
+                icon={RiTeamLine} />
+              <Field fieldKey="margenGanancia" type="percent"
                 label="Margen de Ganancia"
                 description="Margen de ganancia actual"
-                icon={RiMoneyDollarCircleLine}
-              />
+                icon={RiMoneyDollarCircleLine} />
             </div>
 
             {/* Disclaimer */}
