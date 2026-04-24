@@ -3,7 +3,7 @@ import { use, useState, useEffect } from "react";
 import { calcular, formatPeriod } from "@/lib/mock-data";
 import type { Distributor, MonthlyEntry } from "@/lib/mock-data";
 import { getDistributorBySlug, getEntry } from "@/lib/db";
-import { upsertMonthlyEntry } from "@/lib/actions";
+import { upsertDistributorMetrics } from "@/lib/actions";
 import { ALL_PERIOD_KEYS, defaultPeriodKey } from "@/lib/periods";
 import { cn } from "@/utils/cn";
 import Link from "next/link";
@@ -45,6 +45,7 @@ export default function NuevaEntradaPage({ params }: { params: Promise<{ slug: s
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     const p = new URLSearchParams(window.location.search).get("period");
@@ -87,27 +88,22 @@ export default function NuevaEntradaPage({ params }: { params: Promise<{ slug: s
     if (!distributor || saving) return;
     const [periodYear, periodMonth] = periodKey.split("-").map(Number);
     setSaving(true);
-    const { error } = await upsertMonthlyEntry({
+    setSaveError(null);
+    const { error } = await upsertDistributorMetrics({
       id: `${distributor.id}-${periodYear}-${periodMonth}`,
       distributorId: distributor.id,
       periodYear,
       periodMonth,
-      totalCartera:            form.totalCartera,
-      pctActivacion:           form.pctActivacion,
-      pctClientesFritz:        form.pctClientesFritz,
-      pctIncrementoActivos:    0.1,
-      pctIncrementoFritz:      0.1,
-      totalSkusFritz:          form.totalSkusFritz,
-      pctIncrementoSkus:       0.1,
-      cajasPromedio:           form.cajasPromedio,
-      pctIncrementoSellOut:    0.1,
-      numVendedores:           form.numVendedores,
-      pctIncrementoVendedores: 0.05,
-      margenGanancia:          form.margenGanancia,
-      rebate:                  0.01,
-      comentarios:             "",
+      totalCartera:     form.totalCartera,
+      pctActivacion:    form.pctActivacion,
+      pctClientesFritz: form.pctClientesFritz,
+      totalSkusFritz:   form.totalSkusFritz,
+      cajasPromedio:    form.cajasPromedio,
+      numVendedores:    form.numVendedores,
+      margenGanancia:   form.margenGanancia,
+      comentarios:      "",
     });
-    if (error) { console.error(error); setSaving(false); return; }
+    if (error) { setSaveError(error); setSaving(false); return; }
     setSaved(true);
     setTimeout(() => router.push(`/distribuidor/${slug}/datos`), 1500);
   };
@@ -296,13 +292,21 @@ export default function NuevaEntradaPage({ params }: { params: Promise<{ slug: s
                 icon={RiMoneyDollarCircleLine} />
             </div>
 
+            {saveError && (
+              <div className="mt-6 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700">
+                {saveError}
+              </div>
+            )}
+
             <button
               onClick={handleSave}
               disabled={saved || saving}
               className={cn(
-                "mt-8 w-full flex items-center justify-center gap-2 py-3.5 px-4 rounded-xl text-sm font-semibold transition-all",
+                "mt-4 w-full flex items-center justify-center gap-2 py-3.5 px-4 rounded-xl text-sm font-semibold transition-all cursor-pointer",
                 saved
                   ? "bg-green-600 text-white cursor-default"
+                  : saving
+                  ? "bg-primary-400 text-white cursor-not-allowed"
                   : "bg-primary-600 hover:bg-primary-700 active:scale-[0.99] text-white shadow-sm"
               )}
             >

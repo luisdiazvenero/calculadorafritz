@@ -762,7 +762,14 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
 
             const histFiltered = histRows.filter((r) => {
               const q = histSearch.toLowerCase();
-              const cutoffMap = { "3m": "2025-12", "6m": "2025-09", "1y": "2025-03", all: "0000-00" };
+              const now = new Date();
+              const toKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+              const cutoffMap = {
+                "3m":  toKey(new Date(now.getFullYear(), now.getMonth() - 3,  1)),
+                "6m":  toKey(new Date(now.getFullYear(), now.getMonth() - 6,  1)),
+                "1y":  toKey(new Date(now.getFullYear(), now.getMonth() - 12, 1)),
+                "all": "0000-00",
+              };
               return (!q || r.periodLabel.toLowerCase().includes(q)) && r.periodKey >= cutoffMap[histPeriodFilter];
             });
 

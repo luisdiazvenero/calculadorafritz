@@ -76,6 +76,73 @@ export async function updateEntryTargets(
   return { error: null };
 }
 
+// ── Upsert métricas del distribuidor (no toca campos del gerente) ─────────────
+
+export async function upsertDistributorMetrics(data: {
+  id: string;
+  distributorId: string;
+  periodYear: number;
+  periodMonth: number;
+  totalCartera: number;
+  pctActivacion: number;
+  pctClientesFritz: number;
+  totalSkusFritz: number;
+  cajasPromedio: number;
+  numVendedores: number;
+  margenGanancia: number;
+  comentarios: string;
+}): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+
+  const fields = {
+    total_cartera:      data.totalCartera,
+    pct_activacion:     data.pctActivacion,
+    pct_clientes_fritz: data.pctClientesFritz,
+    total_skus_fritz:   data.totalSkusFritz,
+    cajas_promedio:     data.cajasPromedio,
+    num_vendedores:     data.numVendedores,
+    margen_ganancia:    data.margenGanancia,
+    comentarios:        data.comentarios,
+  };
+
+  const { data: existing } = await supabase
+    .from("monthly_entries")
+    .select("id")
+    .eq("distributor_id", data.distributorId)
+    .eq("period_year", data.periodYear)
+    .eq("period_month", data.periodMonth)
+    .maybeSingle();
+
+  if (existing) {
+    const { error } = await supabase
+      .from("monthly_entries")
+      .update(fields)
+      .eq("id", existing.id);
+    if (error) return { error: error.message };
+  } else {
+    const { error } = await supabase
+      .from("monthly_entries")
+      .insert({
+        id:             data.id,
+        distributor_id: data.distributorId,
+        period_year:    data.periodYear,
+        period_month:   data.periodMonth,
+        ...fields,
+        pct_incremento_activos:    0,
+        pct_incremento_fritz:      0,
+        pct_incremento_skus:       0,
+        pct_incremento_sell_out:   0,
+        pct_incremento_vendedores: 0,
+        rebate:                    0,
+      });
+    if (error) return { error: error.message };
+  }
+
+  revalidatePath(`/distribuidor/${data.distributorId}`);
+  revalidatePath(`/dashboard/distribuidor/${data.distributorId}`);
+  return { error: null };
+}
+
 // ── Eliminar entrada mensual ──────────────────────────────────────────────────
 
 export async function deleteMonthlyEntry(
