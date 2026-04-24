@@ -322,21 +322,12 @@ export default function ReportesMensualesPage({ params }: { params: Promise<{ sl
                   <td className="px-6 py-5 tabular-nums" style={{ color: "#171717" }}>{row.skus}</td>
                   <td className="px-6 py-5 tabular-nums" style={{ color: "#171717" }}>{row.vendedores}</td>
                   <td className="px-6 py-5">
-                    <div className="flex items-center gap-3">
-                      <Link
-                        href={`/distribuidor/${slug}/datos/nueva`}
-                        className="text-sm font-medium text-gray-500 hover:text-gray-900 hover:underline"
-                      >
-                        Editar
-                      </Link>
-                      <span className="text-gray-200">|</span>
-                      <Link
-                        href={`/distribuidor/${slug}`}
-                        className="text-sm font-medium text-primary-600 hover:text-primary-700 hover:underline"
-                      >
-                        Ver
-                      </Link>
-                    </div>
+                    <Link
+                      href={`/distribuidor/${slug}/datos/nueva?period=${row.periodKey}`}
+                      className="text-sm font-medium text-gray-500 hover:text-gray-900 hover:underline cursor-pointer"
+                    >
+                      Editar
+                    </Link>
                   </td>
                 </tr>
               ))

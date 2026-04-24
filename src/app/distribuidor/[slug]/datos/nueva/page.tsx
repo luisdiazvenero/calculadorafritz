@@ -47,6 +47,11 @@ export default function NuevaEntradaPage({ params }: { params: Promise<{ slug: s
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    const p = new URLSearchParams(window.location.search).get("period");
+    if (p && ALL_PERIOD_KEYS.includes(p)) setPeriodKey(p);
+  }, []);
+
+  useEffect(() => {
     getDistributorBySlug(slug).then((d) => {
       setDistributor(d);
       setLoading(false);
