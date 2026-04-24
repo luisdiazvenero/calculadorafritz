@@ -1,18 +1,18 @@
 "use client";
 import { use, useState, useEffect } from "react";
 import { calcular, formatPeriod } from "@/lib/mock-data";
-import type { Distributor, MonthlyEntry } from "@/lib/mock-data";
+import type { Distributor } from "@/lib/mock-data";
 import { getDistributorBySlug, getEntry } from "@/lib/db";
 import { upsertDistributorMetrics } from "@/lib/actions";
 import { ALL_PERIOD_KEYS, defaultPeriodKey } from "@/lib/periods";
 import { cn } from "@/utils/cn";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
-  RiArrowLeftLine, RiSaveLine, RiCheckLine,
+  RiArrowLeftLine, RiSaveLine, RiCheckLine, RiEditLine,
   RiArrowDownSLine, RiUserLine, RiBox3Line,
   RiShoppingBagLine, RiTeamLine,
   RiMoneyDollarCircleLine, RiCalendarLine,
+  RiLockLine, RiCloseLine,
 } from "@remixicon/react";
 
 type FormState = {
@@ -35,14 +35,62 @@ const EMPTY_FORM: FormState = {
   margenGanancia: 0,
 };
 
+// ── Field component outside main to avoid focus loss on re-render ─────────────
+function Field({
+  label, description, fieldKey, type, icon: Icon, colSpan = 1,
+  form, onChange, disabled,
+}: {
+  label: string;
+  description: string;
+  fieldKey: keyof FormState;
+  type: "number" | "percent";
+  icon?: React.ComponentType<{ className?: string }>;
+  colSpan?: 1 | 2;
+  form: FormState;
+  onChange: (key: string, value: string, type: string) => void;
+  disabled: boolean;
+}) {
+  const rawValue = form[fieldKey] as number;
+  const displayValue = type === "percent" ? (rawValue * 100).toFixed(0) : String(rawValue);
+  return (
+    <div className={cn(colSpan === 2 ? "col-span-2" : "col-span-1")}>
+      <label className="block text-sm font-medium text-gray-800 mb-1">{label}</label>
+      <p className="text-xs text-gray-400 mb-2">{description}</p>
+      <div className="relative">
+        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none">
+          {type === "percent"
+            ? <span className={cn("text-sm font-medium", disabled ? "text-gray-300" : "text-primary-500")}>%</span>
+            : Icon && <Icon className={cn("w-4 h-4", disabled ? "text-gray-300" : "text-primary-500")} />
+          }
+        </span>
+        <input
+          type="number"
+          value={displayValue}
+          onChange={(e) => onChange(fieldKey, e.target.value, type)}
+          disabled={disabled}
+          className={cn(
+            "w-full pl-10 pr-4 py-3 border rounded-xl text-sm transition-all",
+            disabled
+              ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
+              : "border-gray-200 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+          )}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ── Main component ─────────────────────────────────────────────────────────────
 export default function NuevaEntradaPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
-  const router = useRouter();
 
   const [distributor, setDistributor] = useState<Distributor | null>(null);
   const [loading, setLoading] = useState(true);
   const [periodKey, setPeriodKey] = useState(defaultPeriodKey());
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [snapshot, setSnapshot] = useState<FormState | null>(null);
+  const [locked, setLocked] = useState(false);
+  const [existsInDB, setExistsInDB] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -64,7 +112,7 @@ export default function NuevaEntradaPage({ params }: { params: Promise<{ slug: s
     const [y, m] = periodKey.split("-").map(Number);
     getEntry(distributor.id, y, m).then((entry) => {
       if (entry) {
-        setForm({
+        const loaded: FormState = {
           totalCartera:     entry.totalCartera,
           pctActivacion:    entry.pctActivacion,
           pctClientesFritz: entry.pctClientesFritz,
@@ -72,16 +120,35 @@ export default function NuevaEntradaPage({ params }: { params: Promise<{ slug: s
           cajasPromedio:    entry.cajasPromedio,
           numVendedores:    entry.numVendedores,
           margenGanancia:   entry.margenGanancia,
-        });
+        };
+        setForm(loaded);
+        setLocked(true);
+        setExistsInDB(true);
       } else {
         setForm(EMPTY_FORM);
+        setLocked(false);
+        setExistsInDB(false);
       }
+      setSnapshot(null);
+      setSaveError(null);
     });
   }, [distributor, periodKey]);
 
   const handleChange = (key: string, value: string, type: string) => {
     const parsed = type === "percent" ? parseFloat(value) / 100 : parseFloat(value);
     setForm((prev) => ({ ...prev, [key]: isNaN(parsed) ? 0 : parsed }));
+  };
+
+  const handleEdit = () => {
+    setSnapshot(form);
+    setLocked(false);
+    setSaveError(null);
+  };
+
+  const handleCancel = () => {
+    if (snapshot) setForm(snapshot);
+    setLocked(true);
+    setSaveError(null);
   };
 
   const handleSave = async () => {
@@ -105,45 +172,19 @@ export default function NuevaEntradaPage({ params }: { params: Promise<{ slug: s
     });
     if (error) { setSaveError(error); setSaving(false); return; }
     setSaved(true);
-    setTimeout(() => router.push(`/distribuidor/${slug}/datos`), 1500);
+    setExistsInDB(true);
+    setTimeout(() => {
+      setSaved(false);
+      setSaving(false);
+      setLocked(true);
+      setSnapshot(null);
+    }, 1200);
   };
 
   const fmtCur = (v: number) =>
     v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(1)}M`
     : v >= 1_000   ? `$${(v / 1_000).toFixed(1)}k`
     : `$${Math.round(v).toLocaleString()}`;
-
-  function Field({
-    label, description, fieldKey, type, icon: Icon, colSpan = 1,
-  }: {
-    label: string; description: string; fieldKey: keyof FormState;
-    type: "number" | "percent";
-    icon?: React.ComponentType<{ className?: string }>;
-    colSpan?: 1 | 2;
-  }) {
-    const rawValue = form[fieldKey] as number;
-    const displayValue = type === "percent" ? (rawValue * 100).toFixed(0) : String(rawValue);
-    return (
-      <div className={cn(colSpan === 2 ? "col-span-2" : "col-span-1")}>
-        <label className="block text-sm font-medium text-gray-800 mb-1">{label}</label>
-        <p className="text-xs text-gray-400 mb-2">{description}</p>
-        <div className="relative">
-          <span className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none">
-            {type === "percent"
-              ? <span className="text-sm font-medium text-primary-500">%</span>
-              : Icon && <Icon className="w-4 h-4 text-primary-500" />
-            }
-          </span>
-          <input
-            type="number"
-            value={displayValue}
-            onChange={(e) => handleChange(fieldKey, e.target.value, type)}
-            className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-all bg-white"
-          />
-        </div>
-      </div>
-    );
-  }
 
   const C = {
     yellow:  { bg: "#FEF9C3", text: "#713F12" },
@@ -174,7 +215,7 @@ export default function NuevaEntradaPage({ params }: { params: Promise<{ slug: s
 
   const preview = previewEntry ? calcular(previewEntry as Parameters<typeof calcular>[0]) : null;
 
-  const vendMeta = preview ? Math.round(form.numVendedores * 1.05) : 0;
+  const vendMeta     = preview ? Math.round(form.numVendedores * 1.05) : 0;
   const cli_vend_meta = preview && vendMeta > 0 ? (preview.activadosMeta / vendMeta).toFixed(1) : "—";
   const caj_cli_meta  = preview && preview.activadosMeta > 0 ? (preview.cajasMeta / preview.activadosMeta).toFixed(1) : "—";
   const caj_vend_meta = preview && vendMeta > 0 ? Math.round(preview.cajasMeta / vendMeta).toLocaleString() : "—";
@@ -189,17 +230,17 @@ export default function NuevaEntradaPage({ params }: { params: Promise<{ slug: s
   };
 
   const tableRows: Row[] = preview ? [
-    { label: "Total Cartera",         base: form.totalCartera.toLocaleString(),                  baseBg: "yellow", variacion: "—",                           meta: "—"                                                           },
-    { label: "Activados",             base: Math.round(preview.activadosBase).toLocaleString(),   baseBg: "blue",   variacion: fmtPct(form.pctActivacion),    varBg: "yellow", meta: Math.round(preview.activadosMeta).toLocaleString(), metaBg: "orange" },
-    { label: "Clientes con Fritz",    base: Math.round(preview.fritzeBase).toLocaleString(),      baseBg: "red",    variacion: fmtPct(form.pctClientesFritz), varBg: "blue",   meta: Math.round(preview.fritzMeta).toLocaleString(),     metaBg: "red"    },
-    { label: "Número de SKUs",        base: Math.round(preview.skusBase).toLocaleString(),        baseBg: "red",    variacion: "10%",                         varBg: "blue",   meta: Math.round(preview.skusMeta).toLocaleString(),      metaBg: "red"    },
-    { label: "Cajas Sell Out",        base: Math.round(preview.cajasBase).toLocaleString(),       baseBg: "red",    variacion: "10%",                         varBg: "blue",   meta: Math.round(preview.cajasMeta).toLocaleString(),     metaBg: "green"  },
-    { label: "Clientes Prom × Vend.", base: preview.clientesPorVendedor.toFixed(1),               variacion: "—",                                              meta: cli_vend_meta,                                               metaBg: "green"  },
-    { label: "Cajas Prom × Cliente",  base: preview.cajasPorCliente.toFixed(1),                   variacion: "—",                                              meta: caj_cli_meta                                                               },
-    { label: "Incr. Vendedores",      base: form.numVendedores.toString(),                        variacion: "—",                                              meta: vendMeta > 0 ? vendMeta.toLocaleString() : "—"                             },
-    { label: "Cajas Prom × Vendedor", base: preview.cajasPorVendedor.toFixed(0),                  baseBg: "green",  variacion: "—",                           meta: caj_vend_meta,                                               metaBg: "green"  },
-    { label: "Rentabilidad aprox.",   base: "—",                                                  variacion: "—",   meta: fmtCur(preview.rentabilidad), rowBg: "#DCFCE7", metaBg: "green" },
-    { label: "Rebate final período",  base: "—",                                                  variacion: "—",   meta: fmtCur(preview.rebateTotal),  rowBg: "#DCFCE7", metaBg: "green" },
+    { label: "Total Cartera",         base: form.totalCartera.toLocaleString(),                 baseBg: "yellow", variacion: "—",                           meta: "—"                                                            },
+    { label: "Activados",             base: Math.round(preview.activadosBase).toLocaleString(),  baseBg: "blue",   variacion: fmtPct(form.pctActivacion),    varBg: "yellow", meta: Math.round(preview.activadosMeta).toLocaleString(), metaBg: "orange" },
+    { label: "Clientes con Fritz",    base: Math.round(preview.fritzeBase).toLocaleString(),     baseBg: "red",    variacion: fmtPct(form.pctClientesFritz), varBg: "blue",   meta: Math.round(preview.fritzMeta).toLocaleString(),     metaBg: "red"    },
+    { label: "Número de SKUs",        base: Math.round(preview.skusBase).toLocaleString(),       baseBg: "red",    variacion: "10%",                         varBg: "blue",   meta: Math.round(preview.skusMeta).toLocaleString(),      metaBg: "red"    },
+    { label: "Cajas Sell Out",        base: Math.round(preview.cajasBase).toLocaleString(),      baseBg: "red",    variacion: "10%",                         varBg: "blue",   meta: Math.round(preview.cajasMeta).toLocaleString(),     metaBg: "green"  },
+    { label: "Clientes Prom × Vend.", base: preview.clientesPorVendedor.toFixed(1),              variacion: "—",                                              meta: cli_vend_meta,                                               metaBg: "green"  },
+    { label: "Cajas Prom × Cliente",  base: preview.cajasPorCliente.toFixed(1),                  variacion: "—",                                              meta: caj_cli_meta                                                               },
+    { label: "Incr. Vendedores",      base: form.numVendedores.toString(),                       variacion: "—",                                              meta: vendMeta > 0 ? vendMeta.toLocaleString() : "—"                             },
+    { label: "Cajas Prom × Vendedor", base: preview.cajasPorVendedor.toFixed(0),                 baseBg: "green",  variacion: "—",                           meta: caj_vend_meta,                                               metaBg: "green"  },
+    { label: "Rentabilidad aprox.",   base: "—",                                                 variacion: "—",   meta: fmtCur(preview.rentabilidad), rowBg: "#DCFCE7", metaBg: "green" },
+    { label: "Rebate final período",  base: "—",                                                 variacion: "—",   meta: fmtCur(preview.rebateTotal),  rowBg: "#DCFCE7", metaBg: "green" },
   ] : [];
 
   if (loading) {
@@ -221,13 +262,15 @@ export default function NuevaEntradaPage({ params }: { params: Promise<{ slug: s
       <div className="flex items-center gap-4">
         <Link
           href={`/distribuidor/${slug}/datos`}
-          className="p-2 hover:bg-gray-100 rounded-xl transition-colors text-gray-500 hover:text-gray-900"
+          className="p-2 hover:bg-gray-100 rounded-xl transition-colors text-gray-500 hover:text-gray-900 cursor-pointer"
         >
           <RiArrowLeftLine className="w-5 h-5" />
         </Link>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Cargar Reporte</h1>
-          <p className="text-sm text-gray-400 mt-0.5">{distributor.name} — ingresa los datos del período</p>
+          <h1 className="text-2xl font-bold text-gray-900">
+            {existsInDB ? "Editar Reporte" : "Cargar Reporte"}
+          </h1>
+          <p className="text-sm text-gray-400 mt-0.5">{distributor.name} — {formatPeriod(periodYear, periodMonth)}</p>
         </div>
       </div>
 
@@ -236,10 +279,46 @@ export default function NuevaEntradaPage({ params }: { params: Promise<{ slug: s
 
         {/* Form */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+
+          {/* Section header */}
+          <div className={cn(
+            "px-6 py-4 flex items-center justify-between border-b",
+            locked ? "border-gray-100 bg-gray-50" : "border-primary-100 bg-primary-50"
+          )}>
+            <div className="flex items-center gap-2">
+              {locked
+                ? <RiLockLine className="w-4 h-4 text-gray-400" />
+                : <RiEditLine className="w-4 h-4 text-primary-500" />
+              }
+              <span className={cn("text-sm font-semibold", locked ? "text-gray-500" : "text-primary-700")}>
+                {locked ? "Datos guardados" : existsInDB ? "Editando datos" : "Nuevo reporte"}
+              </span>
+            </div>
+            {locked
+              ? (
+                <button
+                  onClick={handleEdit}
+                  className="flex items-center gap-1.5 text-sm font-medium text-primary-600 hover:text-primary-800 transition-colors cursor-pointer"
+                >
+                  <RiEditLine className="w-4 h-4" />
+                  Editar
+                </button>
+              ) : existsInDB && snapshot && (
+                <button
+                  onClick={handleCancel}
+                  className="flex items-center gap-1.5 text-sm font-medium text-gray-500 hover:text-gray-800 transition-colors cursor-pointer"
+                >
+                  <RiCloseLine className="w-4 h-4" />
+                  Cancelar
+                </button>
+              )
+            }
+          </div>
+
           <div className="px-8 py-6">
             <div className="grid grid-cols-2 gap-x-6 gap-y-6">
 
-              {/* Period */}
+              {/* Period selector */}
               <div className="col-span-2">
                 <label className="block text-sm font-medium text-gray-800 mb-1">Período del reporte</label>
                 <p className="text-xs text-gray-400 mb-2">Mes y año al que corresponden estos datos</p>
@@ -255,9 +334,7 @@ export default function NuevaEntradaPage({ params }: { params: Promise<{ slug: s
                   >
                     {ALL_PERIOD_KEYS.slice().reverse().map((k) => {
                       const [y, m] = k.split("-").map(Number);
-                      return (
-                        <option key={k} value={k}>{formatPeriod(y, m)}</option>
-                      );
+                      return <option key={k} value={k}>{formatPeriod(y, m)}</option>;
                     })}
                   </select>
                   <RiArrowDownSLine className="w-4 h-4 text-gray-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -267,55 +344,72 @@ export default function NuevaEntradaPage({ params }: { params: Promise<{ slug: s
               <Field fieldKey="totalCartera" type="number" colSpan={2}
                 label="Total cartera del Cliente"
                 description="Número total de clientes en tu cartera"
-                icon={RiUserLine} />
+                icon={RiUserLine}
+                form={form} onChange={handleChange} disabled={locked} />
+
               <Field fieldKey="pctActivacion" type="percent"
                 label="% de Activación actual"
-                description="Clientes activos actualmente" />
+                description="Clientes activos actualmente"
+                form={form} onChange={handleChange} disabled={locked} />
+
               <Field fieldKey="pctClientesFritz" type="percent"
                 label="% Clientes con Fritz"
-                description="Clientes activos que tienen Fritz" />
+                description="Clientes activos que tienen Fritz"
+                form={form} onChange={handleChange} disabled={locked} />
+
               <Field fieldKey="totalSkusFritz" type="number"
                 label="SKUs Fritz en portafolio"
                 description="SKUs de Fritz en tu portafolio"
-                icon={RiBox3Line} />
+                icon={RiBox3Line}
+                form={form} onChange={handleChange} disabled={locked} />
+
               <Field fieldKey="cajasPromedio" type="number"
                 label="Cajas promedio (Sell Out)"
                 description="Cajas vendidas por período"
-                icon={RiShoppingBagLine} />
+                icon={RiShoppingBagLine}
+                form={form} onChange={handleChange} disabled={locked} />
+
               <Field fieldKey="numVendedores" type="number"
                 label="# de Vendedores"
                 description="Vendedores en tu equipo"
-                icon={RiTeamLine} />
+                icon={RiTeamLine}
+                form={form} onChange={handleChange} disabled={locked} />
+
               <Field fieldKey="margenGanancia" type="percent"
                 label="Margen de Ganancia"
                 description="Tu margen de ganancia actual"
-                icon={RiMoneyDollarCircleLine} />
+                icon={RiMoneyDollarCircleLine}
+                form={form} onChange={handleChange} disabled={locked} />
             </div>
 
-            {saveError && (
-              <div className="mt-6 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700">
-                {saveError}
-              </div>
-            )}
+            {!locked && (
+              <>
+                {saveError && (
+                  <div className="mt-6 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700">
+                    {saveError}
+                  </div>
+                )}
 
-            <button
-              onClick={handleSave}
-              disabled={saved || saving}
-              className={cn(
-                "mt-4 w-full flex items-center justify-center gap-2 py-3.5 px-4 rounded-xl text-sm font-semibold transition-all cursor-pointer",
-                saved
-                  ? "bg-green-600 text-white cursor-default"
-                  : saving
-                  ? "bg-primary-400 text-white cursor-not-allowed"
-                  : "bg-primary-600 hover:bg-primary-700 active:scale-[0.99] text-white shadow-sm"
-              )}
-            >
-              {saved ? (
-                <><RiCheckLine className="w-4 h-4" /> ¡Guardado! Redirigiendo...</>
-              ) : (
-                <><RiSaveLine className="w-4 h-4" /> {saving ? "Guardando..." : "Guardar Reporte"}</>
-              )}
-            </button>
+                <button
+                  onClick={handleSave}
+                  disabled={saved || saving}
+                  className={cn(
+                    "mt-6 w-full flex items-center justify-center gap-2 py-3.5 px-4 rounded-xl text-sm font-semibold transition-all",
+                    saved
+                      ? "bg-green-600 text-white cursor-default"
+                      : saving
+                      ? "bg-primary-400 text-white cursor-not-allowed"
+                      : "bg-primary-600 hover:bg-primary-700 active:scale-[0.99] text-white shadow-sm cursor-pointer"
+                  )}
+                >
+                  {saved ? (
+                    <><RiCheckLine className="w-4 h-4" /> ¡Guardado!</>
+                  ) : (
+                    <><RiSaveLine className="w-4 h-4" /> {saving ? "Guardando..." : "Guardar Reporte"}</>
+                  )}
+                </button>
+              </>
+            )}
           </div>
         </div>
 
