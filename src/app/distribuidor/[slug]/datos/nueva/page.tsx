@@ -187,11 +187,6 @@ export default function NuevaEntradaPage({ params }: { params: Promise<{ slug: s
     }, 1200);
   };
 
-  const fmtCur = (v: number) =>
-    v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(1)}M`
-    : v >= 1_000   ? `$${(v / 1_000).toFixed(1)}k`
-    : `$${Math.round(v).toLocaleString()}`;
-
   const C = {
     yellow:  { bg: "#FEF9C3", text: "#713F12" },
     blue:    { bg: "#DBEAFE", text: "#1E3A8A" },
@@ -245,8 +240,6 @@ export default function NuevaEntradaPage({ params }: { params: Promise<{ slug: s
     { label: "Cajas Prom × Cliente",  base: preview.cajasPorCliente.toFixed(1),                  variacion: "—",                                              meta: caj_cli_meta                                                               },
     { label: "Incr. Vendedores",      base: form.numVendedores.toString(),                       variacion: "—",                                              meta: vendMeta > 0 ? vendMeta.toLocaleString() : "—"                             },
     { label: "Cajas Prom × Vendedor", base: preview.cajasPorVendedor.toFixed(0),                 baseBg: "green",  variacion: "—",                           meta: caj_vend_meta,                                               metaBg: "green"  },
-    { label: "Rentabilidad aprox.",   base: "—",                                                 variacion: "—",   meta: fmtCur(preview.rentabilidad), rowBg: "#DCFCE7", metaBg: "green" },
-    { label: "Rebate final período",  base: "—",                                                 variacion: "—",   meta: fmtCur(preview.rebateTotal),  rowBg: "#DCFCE7", metaBg: "green" },
   ] : [];
 
   if (loading) {
