@@ -161,6 +161,34 @@ export default function ReportesMensualesPage({ params }: { params: Promise<{ sl
     : v >= 1_000   ? `$${(v / 1_000).toFixed(1)}k`
     : `$${v.toLocaleString()}`;
 
+  const handleExport = () => {
+    const headers = ["Período", "Cartera", "% Activación", "Activados", "Cajas SO", "SKUs Fritz", "Vendedores"];
+    const csvRows = [
+      headers.join(","),
+      ...sorted.map((r) =>
+        [
+          r.periodLabel,
+          r.cartera,
+          (r.pctActivacion * 100).toFixed(0) + "%",
+          r.activados,
+          r.cajas,
+          r.skus,
+          r.vendedores,
+        ].join(",")
+      ),
+    ];
+    const csvString = csvRows.join("\n");
+    const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `reportes-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   if (loading) {
     return (
       <div className="p-8 space-y-8">
@@ -259,7 +287,7 @@ export default function ReportesMensualesPage({ params }: { params: Promise<{ sl
 
           <span className="ml-auto text-sm text-gray-400">{sorted.length} registros</span>
 
-          <button className="flex items-center gap-1.5 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-600 bg-white hover:border-gray-300 hover:text-gray-900 transition-colors">
+          <button onClick={handleExport} className="flex items-center gap-1.5 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-600 bg-white hover:border-gray-300 hover:text-gray-900 transition-colors cursor-pointer">
             <RiShareBoxLine className="w-4 h-4" />
             Exportar
           </button>

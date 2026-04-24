@@ -193,7 +193,7 @@ export default function DistribuidorVistaGlobal({ params }: { params: Promise<{ 
 
         <Link
           href={`/distribuidor/${slug}/datos/nueva`}
-          className="flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium px-4 py-2 rounded-xl transition-colors"
+          className="flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium px-4 py-2 rounded-xl transition-colors cursor-pointer"
         >
           <RiAddLine className="w-4 h-4" />
           Cargar Reporte
@@ -695,7 +695,7 @@ export default function DistribuidorVistaGlobal({ params }: { params: Promise<{ 
           <p className="text-gray-400 text-sm mb-4">No hay datos para este período.</p>
           <Link
             href={`/distribuidor/${slug}/datos/nueva`}
-            className="inline-flex items-center gap-2 bg-primary-600 text-white text-sm font-medium px-4 py-2 rounded-xl"
+            className="inline-flex items-center gap-2 bg-primary-600 text-white text-sm font-medium px-4 py-2 rounded-xl cursor-pointer"
           >
             <RiAddLine className="w-4 h-4" />
             Cargar Reporte

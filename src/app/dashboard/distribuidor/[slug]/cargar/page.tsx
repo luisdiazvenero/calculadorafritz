@@ -1,8 +1,8 @@
 "use client";
 import { use, useState, useEffect } from "react";
 import { calcular, formatPeriod } from "@/lib/mock-data";
-import type { Distributor, Region } from "@/lib/mock-data";
-import { getDistributorBySlug, getRegions, getEntry } from "@/lib/db";
+import type { Distributor, Region, MonthlyEntry } from "@/lib/mock-data";
+import { getDistributorBySlug, getRegions, getEntry, getEntriesByDistributor } from "@/lib/db";
 import { upsertMonthlyEntry } from "@/lib/actions";
 import { ALL_PERIOD_KEYS_AHEAD, currentPeriodKey } from "@/lib/periods";
 import { cn } from "@/utils/cn";
@@ -19,6 +19,7 @@ import {
   RiCheckLine,
   RiLockLine,
   RiEditLine,
+  RiAlertLine,
 } from "@remixicon/react";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -177,6 +178,7 @@ export default function CargarDatosPage({ params }: { params: Promise<{ slug: st
 
   const [distributor, setDistributor] = useState<Distributor | null>(null);
   const [region, setRegion]           = useState<Region | null>(null);
+  const [allEntries, setAllEntries]   = useState<Pick<MonthlyEntry, "periodYear" | "periodMonth">[]>([]);
   const [loading, setLoading]         = useState(true);
   const [periodKey, setPeriodKey]     = useState(currentPeriodKey());
   const [form, setForm]               = useState<FormState>(EMPTY_FORM);
@@ -197,7 +199,10 @@ export default function CargarDatosPage({ params }: { params: Promise<{ slug: st
   useEffect(() => {
     Promise.all([getDistributorBySlug(slug), getRegions()]).then(([d, regions]) => {
       setDistributor(d);
-      if (d) setRegion(regions.find((r) => r.id === d.regionId) ?? null);
+      if (d) {
+        setRegion(regions.find((r) => r.id === d.regionId) ?? null);
+        getEntriesByDistributor(d.id).then((entries) => setAllEntries(entries));
+      }
       setLoading(false);
     });
   }, [slug]);
@@ -317,6 +322,16 @@ export default function CargarDatosPage({ params }: { params: Promise<{ slug: st
 
   const now = new Date();
 
+  const missingMonths: { year: number; month: number }[] = [];
+  for (let i = 1; i <= 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const y = d.getFullYear();
+    const m = d.getMonth() + 1;
+    if (!allEntries.some((e) => e.periodYear === y && e.periodMonth === m)) {
+      missingMonths.push({ year: y, month: m });
+    }
+  }
+
   return (
     <div className="p-8 space-y-6">
 
@@ -324,7 +339,7 @@ export default function CargarDatosPage({ params }: { params: Promise<{ slug: st
       <div className="flex items-center gap-4">
         <Link
           href={`/dashboard/distribuidor/${slug}`}
-          className="p-2 hover:bg-gray-100 rounded-xl transition text-gray-500 hover:text-gray-900"
+          className="p-2 hover:bg-gray-100 rounded-xl transition text-gray-500 hover:text-gray-900 cursor-pointer"
         >
           <RiArrowLeftLine className="w-5 h-5" />
         </Link>
@@ -333,6 +348,25 @@ export default function CargarDatosPage({ params }: { params: Promise<{ slug: st
           <h1 className="text-2xl font-bold text-gray-900">Cargar Datos</h1>
         </div>
       </div>
+
+      {/* Missing months notice */}
+      {missingMonths.length > 0 && (
+        <div className="flex items-center gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-sm flex-wrap">
+          <RiAlertLine className="w-4 h-4 text-amber-500 flex-shrink-0" />
+          <span className="text-amber-700 font-medium whitespace-nowrap">Meses sin datos:</span>
+          <div className="flex gap-2 flex-wrap">
+            {missingMonths.map(({ year, month }) => (
+              <button
+                key={`${year}-${month}`}
+                onClick={() => setPeriodKey(`${year}-${String(month).padStart(2, "0")}`)}
+                className="text-xs bg-amber-100 hover:bg-amber-200 text-amber-800 px-2.5 py-1 rounded-full font-semibold cursor-pointer transition-colors"
+              >
+                {formatPeriod(year, month)}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Body */}
       <div className="grid lg:grid-cols-5 gap-6 items-start">
