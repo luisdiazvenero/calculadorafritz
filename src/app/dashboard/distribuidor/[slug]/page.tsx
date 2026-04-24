@@ -938,7 +938,8 @@ export default function DistribuidorPage({ params }: { params: Promise<{ slug: s
                                     <button
                                       onClick={async () => {
                                         setDeleting(true);
-                                        const entryId = `${distributor.id}-${row.periodKey.replace("-", "-")}`;
+                                        const [ey, em] = row.periodKey.split("-").map(Number);
+                                        const entryId = `${distributor.id}-${ey}-${em}`;
                                         const { error } = await deleteMonthlyEntry(entryId, slug);
                                         if (!error) setEntries((prev) => prev.filter((e) => `${e.periodYear}-${String(e.periodMonth).padStart(2,"0")}` !== row.periodKey));
                                         setConfirmDeleteKey(null);
