@@ -7,6 +7,7 @@ import { upsertMonthlyEntry } from "@/lib/actions";
 import { ALL_PERIOD_KEYS_AHEAD, currentPeriodKey } from "@/lib/periods";
 import { cn } from "@/utils/cn";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   RiArrowLeftLine,
   RiSaveLine,
@@ -175,6 +176,7 @@ function SectionHeader({
 
 export default function CargarDatosPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
+  const router = useRouter();
 
   const [distributor, setDistributor] = useState<Distributor | null>(null);
   const [region, setRegion]           = useState<Region | null>(null);
@@ -187,6 +189,8 @@ export default function CargarDatosPage({ params }: { params: Promise<{ slug: st
   const [metricsLocked, setMetricsLocked] = useState(false);
   const [savingTargets, setSavingTargets] = useState(false);
   const [savingMetrics, setSavingMetrics] = useState(false);
+  const [targetsError, setTargetsError]   = useState<string | null>(null);
+  const [metricsError, setMetricsError]   = useState<string | null>(null);
   const [targetsSnapshot, setTargetsSnapshot] = useState<FormState>(EMPTY_FORM);
   const [metricsSnapshot, setMetricsSnapshot] = useState<FormState>(EMPTY_FORM);
 
@@ -195,6 +199,11 @@ export default function CargarDatosPage({ params }: { params: Promise<{ slug: st
     const p = new URLSearchParams(window.location.search).get("period");
     if (p && ALL_PERIOD_KEYS_AHEAD.includes(p)) setPeriodKey(p);
   }, []);
+
+  // Sync period selector to URL
+  useEffect(() => {
+    router.replace(`/dashboard/distribuidor/${slug}/cargar?period=${periodKey}`);
+  }, [periodKey, slug, router]);
 
   useEffect(() => {
     Promise.all([getDistributorBySlug(slug), getRegions()]).then(([d, regions]) => {
@@ -265,17 +274,21 @@ export default function CargarDatosPage({ params }: { params: Promise<{ slug: st
   const handleSaveTargets = async () => {
     if (!distributor || savingTargets) return;
     setSavingTargets(true);
+    setTargetsError(null);
     const { error } = await upsertMonthlyEntry(buildPayload());
     setSavingTargets(false);
-    if (!error) setTargetsLocked(true);
+    if (error) { setTargetsError(error); return; }
+    setTargetsLocked(true);
   };
 
   const handleSaveMetrics = async () => {
     if (!distributor || savingMetrics) return;
     setSavingMetrics(true);
+    setMetricsError(null);
     const { error } = await upsertMonthlyEntry(buildPayload());
     setSavingMetrics(false);
-    if (!error) setMetricsLocked(true);
+    if (error) { setMetricsError(error); return; }
+    setMetricsLocked(true);
   };
 
   if (loading) {
@@ -421,6 +434,12 @@ export default function CargarDatosPage({ params }: { params: Promise<{ slug: st
                 <PctInput value={form.rebate}                  onChange={(v) => setPct("rebate", v)}                  label="Rebate (%)"                    disabled={targetsLocked} />
               </div>
               {!targetsLocked && (
+                <>
+                  {targetsError && (
+                    <div className="mt-4 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700">
+                      {targetsError}
+                    </div>
+                  )}
                 <div className="flex items-center justify-end gap-3 mt-5">
                   <button
                     onClick={() => { setForm(targetsSnapshot); setTargetsLocked(true); }}
@@ -438,6 +457,7 @@ export default function CargarDatosPage({ params }: { params: Promise<{ slug: st
                     {savingTargets ? "Guardando..." : "Guardar Metas"}
                   </button>
                 </div>
+                </>
               )}
             </div>
           </div>
@@ -481,6 +501,12 @@ export default function CargarDatosPage({ params }: { params: Promise<{ slug: st
                 </div>
               </div>
               {!metricsLocked && (
+                <>
+                  {metricsError && (
+                    <div className="mt-4 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700">
+                      {metricsError}
+                    </div>
+                  )}
                 <div className="flex items-center justify-end gap-3 mt-5">
                   <button
                     onClick={() => { setForm(metricsSnapshot); setMetricsLocked(true); }}
@@ -498,6 +524,7 @@ export default function CargarDatosPage({ params }: { params: Promise<{ slug: st
                     {savingMetrics ? "Guardando..." : "Guardar Métricas"}
                   </button>
                 </div>
+                </>
               )}
             </div>
           </div>
