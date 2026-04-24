@@ -7,6 +7,7 @@ import { upsertDistributorMetrics } from "@/lib/actions";
 import { ALL_PERIOD_KEYS, defaultPeriodKey } from "@/lib/periods";
 import { cn } from "@/utils/cn";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   RiArrowLeftLine, RiSaveLine, RiCheckLine, RiEditLine,
   RiArrowDownSLine, RiUserLine, RiBox3Line,
@@ -83,6 +84,7 @@ function Field({
 // ── Main component ─────────────────────────────────────────────────────────────
 export default function NuevaEntradaPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
+  const router = useRouter();
 
   const [distributor, setDistributor] = useState<Distributor | null>(null);
   const [loading, setLoading] = useState(true);
@@ -99,6 +101,10 @@ export default function NuevaEntradaPage({ params }: { params: Promise<{ slug: s
     const p = new URLSearchParams(window.location.search).get("period");
     if (p && ALL_PERIOD_KEYS.includes(p)) setPeriodKey(p);
   }, []);
+
+  useEffect(() => {
+    router.replace(`/distribuidor/${slug}/datos/nueva?period=${periodKey}`);
+  }, [periodKey, slug, router]);
 
   useEffect(() => {
     getDistributorBySlug(slug).then((d) => {
