@@ -6,6 +6,7 @@ import { getDistributorBySlug, getRegions } from "@/lib/db";
 import { createClient } from "@/lib/supabase/client";
 import type { Distributor, Region } from "@/lib/mock-data";
 import { cn } from "@/utils/cn";
+import { REGION_COLORS } from "@/lib/regions";
 import {
   RiEarthLine,
   RiBarChartBoxLine,
@@ -16,14 +17,6 @@ import {
   RiLogoutBoxLine,
 } from "@remixicon/react";
 
-const REGION_COLORS: Record<string, string> = {
-  Capital:            "#3B82F6",
-  Oriente:            "#F59E0B",
-  Centro:             "#10B981",
-  "Centro Occidente": "#F43F5E",
-  Occidente:          "#8B5CF6",
-  Andes:              "#0891B2",
-};
 
 export default function DistribuidorLayout({
   children,
@@ -73,10 +66,10 @@ export default function DistribuidorLayout({
         )}>
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="w-8 h-8 rounded-lg bg-primary-600 flex items-center justify-center flex-shrink-0">
-              <span className="text-white text-xs font-bold">F</span>
+              <span className="text-white text-xs font-bold">G</span>
             </div>
             {!isCollapsed && (
-              <span className="text-sm font-semibold text-gray-700 truncate">Fritz Calculadora</span>
+              <span className="text-sm font-semibold text-gray-700 truncate">Grow Path</span>
             )}
           </div>
           <button

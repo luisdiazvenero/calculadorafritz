@@ -5,8 +5,8 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata: Metadata = {
-  title: "Fritz Calculadora",
-  description: "Calculadora de métricas para distribuidores Fritz",
+  title: "Grow Path",
+  description: "Dashboard de métricas para distribuidores Fritz",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
