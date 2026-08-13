@@ -41,6 +41,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           setUserEmail(u.email);
           setUserRole(u.role);
         }
+        // El editor ve una sola región: no tiene sentido que arranque colapsada.
+        const own = u?.regionSlug ? r.find((x) => x.slug === u.regionSlug) : undefined;
+        if (own) setExpandedRegions([own.id]);
+        else if (r.length === 1) setExpandedRegions([r[0].id]);
       }
     );
   }, []);
