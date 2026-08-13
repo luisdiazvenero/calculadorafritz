@@ -45,11 +45,32 @@ export async function proxy(request: NextRequest) {
 
   const role: string = user.app_metadata?.role ?? "";
   const distSlug: string = user.app_metadata?.distributor_slug ?? "";
+  const regionSlug: string = user.app_metadata?.region_slug ?? "";
 
   // GERENTE: accede a /dashboard/*, bloqueado en /distribuidor/*
   if (role === "gerente") {
     if (pathname.startsWith("/distribuidor/")) {
       return NextResponse.redirect(new URL("/dashboard", request.url));
+    }
+    return response;
+  }
+
+  // EDITOR: accede a /dashboard/* pero solo a su región. RLS ya filtra los
+  // datos; acá solo se evita que quede mirando una región vacía ajena.
+  if (role === "editor") {
+    if (!regionSlug) {
+      return NextResponse.redirect(new URL("/?error=sin-region", request.url));
+    }
+    if (pathname.startsWith("/distribuidor/")) {
+      return NextResponse.redirect(new URL("/dashboard", request.url));
+    }
+    // La gestión de usuarios es solo del gerente
+    if (pathname.startsWith("/dashboard/usuarios")) {
+      return NextResponse.redirect(new URL("/dashboard", request.url));
+    }
+    const urlRegion = pathname.match(/^\/dashboard\/region\/([^/]+)/)?.[1];
+    if (urlRegion && urlRegion !== regionSlug) {
+      return NextResponse.redirect(new URL(`/dashboard/region/${regionSlug}`, request.url));
     }
     return response;
   }

@@ -6,6 +6,7 @@ import { getDistributorBySlug, getRegions, getEntriesByDistributor } from "@/lib
 import { ALL_PERIOD_KEYS, defaultPeriodKey, defaultPrevKey } from "@/lib/periods";
 import { cn } from "@/utils/cn";
 import Link from "next/link";
+import { REGION_COLORS } from "@/lib/regions";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell,
@@ -19,14 +20,6 @@ import {
   RiShareBoxLine,
 } from "@remixicon/react";
 
-const REGION_COLORS: Record<string, string> = {
-  Capital:            "#3B82F6",
-  Oriente:            "#F59E0B",
-  Centro:             "#10B981",
-  "Centro Occidente": "#F43F5E",
-  Occidente:          "#8B5CF6",
-  Andes:              "#0891B2",
-};
 
 function DeltaBadge({ current, previous }: { current: number; previous: number }) {
   const d = delta(current, previous);

@@ -87,10 +87,12 @@ function mapEntry(row: DbMonthlyEntry): MonthlyEntry {
 
 export async function getRegions(): Promise<Region[]> {
   const supabase = createClient();
+  // Por nombre y no por id: Oriente Sur se creó después (id 7) y quedaba al
+  // final de la lista, lejos de Oriente Norte. Alfabético las deja juntas.
   const { data, error } = await supabase
     .from("regions")
     .select("*")
-    .order("id");
+    .order("name");
   if (error) { console.error("getRegions:", error.message); return []; }
   return (data as DbRegion[]).map(mapRegion);
 }
@@ -234,20 +236,30 @@ export async function getAvailablePeriods(): Promise<Array<{ year: number; month
 
 // ── Auth helper ───────────────────────────────────────────────────────────────
 
+export type UserRole = "gerente" | "editor" | "distribuidor";
+
+export const ROLE_LABELS: Record<UserRole, string> = {
+  gerente: "Administrador",
+  editor: "Editor",
+  distribuidor: "Distribuidor",
+};
+
 export async function getCurrentUser(): Promise<{
   id: string;
   email: string;
-  role: "gerente" | "distribuidor";
+  role: UserRole;
   distributorSlug?: string;
+  regionSlug?: string;
 } | null> {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
-  const role = user.app_metadata?.role as "gerente" | "distribuidor";
+  const role = user.app_metadata?.role as UserRole;
   return {
     id: user.id,
     email: user.email ?? "",
     role,
     distributorSlug: user.app_metadata?.distributor_slug,
+    regionSlug: user.app_metadata?.region_slug,
   };
 }

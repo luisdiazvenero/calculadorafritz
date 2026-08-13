@@ -13,15 +13,8 @@ import {
 } from "recharts";
 import { RiArrowLeftLine } from "@remixicon/react";
 import SkuTable from "@/components/SkuTable";
+import { REGION_COLORS } from "@/lib/regions";
 
-const REGION_COLORS: Record<string, string> = {
-  Capital:           "#3B82F6",
-  Oriente:           "#F59E0B",
-  Centro:            "#10B981",
-  "Centro Occidente":"#F43F5E",
-  Occidente:         "#8B5CF6",
-  Andes:             "#0891B2",
-};
 
 function generatePeriodKeys(): string[] {
   const keys: string[] = [];

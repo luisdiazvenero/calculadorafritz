@@ -11,6 +11,7 @@ import {
 } from "recharts";
 import { RiArrowUpLine, RiArrowDownLine } from "@remixicon/react";
 import SkuTable from "@/components/SkuTable";
+import { REGION_COLORS } from "@/lib/regions";
 
 type Period = { year: number; month: number };
 
@@ -171,14 +172,6 @@ function ActivationBar({ pct }: { pct: number }) {
 
 type SparkPoint = { label: string; activados: number; cajas: number; rent: number };
 
-const REGION_COLORS: Record<string, string> = {
-  Capital:            "#3B82F6",
-  Oriente:            "#F59E0B",
-  Centro:             "#10B981",
-  "Centro Occidente": "#F43F5E",
-  Occidente:          "#8B5CF6",
-  Andes:              "#0891B2",
-};
 
 function RegionMiniCard({
   region, cur, prevActivados, spark,
@@ -286,9 +279,12 @@ export default function DashboardPage() {
   const activeCount = distributors.filter((d) => d.status === "active").length;
   const pausedCount = distributors.filter((d) => d.status === "paused").length;
 
-  const [activeRegions, setActiveRegions] = useState<Set<string>>(
-    new Set(["Capital","Oriente","Centro","Centro Occidente","Occidente","Andes"])
-  );
+  // Arranca con todas encendidas. Se deriva de `regions` para no tener que
+  // tocar esta lista cada vez que se agrega o divide una región.
+  const [activeRegions, setActiveRegions] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    setActiveRegions(new Set(regions.map((r) => r.name)));
+  }, [regions]);
   const toggleRegion = (name: string) =>
     setActiveRegions((prev) => {
       const next = new Set(prev);

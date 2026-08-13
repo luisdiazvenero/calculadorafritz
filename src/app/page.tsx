@@ -28,9 +28,14 @@ export default function LoginPage() {
 
     const role = data.user.app_metadata?.role;
     const distSlug = data.user.app_metadata?.distributor_slug;
+    const regionSlug = data.user.app_metadata?.region_slug;
 
     if (role === "gerente") {
       router.push("/dashboard");
+    } else if (role === "editor" && regionSlug) {
+      router.push(`/dashboard/region/${regionSlug}`);
+    } else if (role === "editor") {
+      setError("Tu cuenta no tiene una región asignada. Contacta al administrador.");
     } else if (role === "distribuidor" && distSlug) {
       router.push(`/distribuidor/${distSlug}`);
     } else {
@@ -44,9 +49,9 @@ export default function LoginPage() {
         {/* Logo / Brand */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-primary-600 rounded-2xl mb-4">
-            <span className="text-white text-2xl font-bold">F</span>
+            <span className="text-white text-2xl font-bold">G</span>
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">Fritz Calculadora</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Grow Path</h1>
           <p className="text-gray-500 mt-1 text-sm">Portal de métricas para distribuidores</p>
         </div>
 

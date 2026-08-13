@@ -2,21 +2,14 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
-import { getRegions, getDistributors, getCurrentUser } from "@/lib/db";
+import { getRegions, getDistributors, getCurrentUser, ROLE_LABELS, type UserRole } from "@/lib/db";
 import { createClient } from "@/lib/supabase/client";
 import type { Region, Distributor } from "@/lib/mock-data";
 
-const REGION_COLORS: Record<string, string> = {
-  Capital:           "#3B82F6",
-  Oriente:           "#F59E0B",
-  Centro:            "#10B981",
-  "Centro Occidente":"#F43F5E",
-  Occidente:         "#8B5CF6",
-  Andes:             "#0891B2",
-};
 import {
   RiDashboardLine,
   RiGroupLine,
+  RiShieldUserLine,
   RiCalculatorLine,
   RiArrowDownSLine,
   RiArrowRightSLine,
@@ -26,6 +19,7 @@ import {
   RiCloseLine,
 } from "@remixicon/react";
 import { cn } from "@/utils/cn";
+import { REGION_COLORS } from "@/lib/regions";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -36,13 +30,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [regions, setRegions]                 = useState<Region[]>([]);
   const [distributors, setDistributors]       = useState<Distributor[]>([]);
   const [userEmail, setUserEmail]             = useState("");
+  const [userRole, setUserRole]               = useState<UserRole | null>(null);
 
   useEffect(() => {
     Promise.all([getRegions(), getDistributors(), getCurrentUser()]).then(
       ([r, d, u]) => {
         setRegions(r);
         setDistributors(d);
-        if (u) setUserEmail(u.email);
+        if (u) {
+          setUserEmail(u.email);
+          setUserRole(u.role);
+        }
       }
     );
   }, []);
@@ -88,12 +86,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         )}>
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center flex-shrink-0">
-              <span className="text-white text-sm font-bold">F</span>
+              <span className="text-white text-sm font-bold">G</span>
             </div>
             {!collapsed && (
               <div className="min-w-0">
-                <p className="text-sm font-semibold text-gray-900">Fritz</p>
-                <p className="text-xs text-gray-400">Calculadora de métricas</p>
+                <p className="text-sm font-semibold text-gray-900">Grow Path</p>
+                <p className="text-xs text-gray-400">Dashboard</p>
               </div>
             )}
           </div>
@@ -223,6 +221,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             {!collapsed && "Distribuidores"}
           </Link>
 
+          {userRole === "gerente" && (
+            <Link
+              href="/dashboard/usuarios"
+              title={collapsed ? "Usuarios" : undefined}
+              className={cn(
+                "flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition",
+                collapsed ? "justify-center" : "",
+                pathname === "/dashboard/usuarios"
+                  ? "bg-primary-50 text-primary-700"
+                  : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+              )}
+            >
+              <RiShieldUserLine className="w-4 h-4 flex-shrink-0" />
+              {!collapsed && "Usuarios"}
+            </Link>
+          )}
+
           {(() => {
             const distSlug = pathname.match(/\/dashboard\/distribuidor\/([^/]+)/)?.[1];
             const href     = distSlug ? `/dashboard/distribuidor/${distSlug}/calculadora` : "/dashboard/calculadora";
@@ -254,7 +269,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-medium text-gray-900 truncate">{userEmail || "Cargando…"}</p>
-                  <p className="text-xs text-gray-400">Administrador</p>
+                  <p className="text-xs text-gray-400">
+                    {userRole ? ROLE_LABELS[userRole] : "…"}
+                  </p>
                 </div>
               </div>
               <button
